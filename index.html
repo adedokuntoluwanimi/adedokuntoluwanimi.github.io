@@ -285,6 +285,34 @@
   .feedback.wrong .feedback-head { color: var(--red); }
   .feedback-ref { font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); margin-top: 8px; }
 
+  .q-type { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; margin-bottom: 8px; }
+  .q-type.mcq { color: var(--accent); background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.25); }
+  .q-type.saq { color: var(--purple); background: rgba(210,168,255,0.12); border: 1px solid rgba(210,168,255,0.25); }
+
+  .saq-input textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14.5px;
+    line-height: 1.5;
+    resize: vertical;
+  }
+  .saq-input textarea:focus { outline: none; border-color: var(--accent); }
+  .saq-input textarea:disabled { opacity: 0.85; }
+
+  .keyword-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .kw { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 99px; border: 1px solid var(--border); }
+  .kw.hit { color: var(--green); border-color: rgba(63,185,80,0.4); background: var(--green-bg); }
+  .kw.miss { color: var(--text-dim); border-color: var(--border); background: var(--surface2); text-decoration: line-through; opacity: 0.7; }
+
+  .model-answer { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); font-size: 14px; line-height: 1.55; }
+  .model-answer-label { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
+
   .runner-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
   .runner-actions .spacer { flex: 1; }
 
@@ -393,6 +421,7 @@
 
 const STORE_KEY = "py411-reviser-v1";
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
+const SAQ_PASS_RATIO = 0.6;
 
 const state = {
   data: null,          // { units, lectures, questions }
@@ -484,17 +513,66 @@ const durationText = (seconds) => {
   return `${m}m ${String(s % 60).padStart(2, "0")}s`;
 };
 
+const isMcq = (q) => (q.type || "mcq") === "mcq";
+const isSaq = (q) => q.type === "saq";
+
+const normalizeText = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const scoreSaqAnswer = (userText, keywords) => {
+  const text = normalizeText(userText);
+  const list = Array.isArray(keywords) ? keywords : [];
+  if (!text || !list.length) return { matched: [], missed: list, ratio: 0, correct: false };
+  const matched = list.filter((k) => text.includes(normalizeText(k)));
+  const missed = list.filter((k) => !matched.includes(k));
+  const ratio = matched.length / list.length;
+  return { matched, missed, ratio, correct: ratio >= SAQ_PASS_RATIO };
+};
+
+const isAnswerCorrect = (q, answer) => {
+  if (isSaq(q)) {
+    if (answer === null || answer === undefined || !String(answer).trim()) return false;
+    return scoreSaqAnswer(answer, q.keywords).correct;
+  }
+  return answer === q.answer;
+};
+
+const hasAnswer = (q, answer) => {
+  if (isSaq(q)) return answer !== null && answer !== undefined && String(answer).trim().length > 0;
+  return answer !== null;
+};
+
 const dateText = (iso) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 };
 
-// Options are shuffled per sitting, so the answer index is remapped with them.
+// MCQ options are shuffled per sitting; SAQs pass through unchanged.
 const prepareQuestion = (q) => {
+  if (isSaq(q)) {
+    return {
+      id: q.id,
+      type: "saq",
+      q: q.q,
+      answer: q.answer || "",
+      keywords: Array.isArray(q.keywords) ? q.keywords.slice() : [],
+      explanation: q.explanation || "",
+      ref: q.ref || "",
+      difficulty: q.difficulty || "",
+      slug: q.slug,
+      title: q.title,
+      unit: q.unit,
+    };
+  }
   const paired = q.options.map((text, index) => ({ text, correct: index === q.answer }));
   const mixed = shuffle(paired);
   return {
     id: q.id,
+    type: "mcq",
     q: q.q,
     options: mixed.map((o) => o.text),
     answer: mixed.findIndex((o) => o.correct),
@@ -539,6 +617,14 @@ const questionsForScope = (scope) => {
 const filterByLectures = (questions, slugs) =>
   !slugs || !slugs.length ? questions : questions.filter((q) => slugs.includes(q.slug));
 
+const filterByTypes = (questions, types) => {
+  if (!types || !types.length) return questions;
+  return questions.filter((q) => types.includes(q.type || "mcq"));
+};
+
+const filterPool = (setup) =>
+  filterByTypes(filterByLectures(questionsForScope(setup), setup.slugs), setup.types || ["mcq", "saq"]);
+
 const scopeLabel = (setup) => {
   const parts = [];
   const ready = state.data.lectures.filter((l) => l.ready);
@@ -565,6 +651,9 @@ const scopeLabel = (setup) => {
     }
   }
   if (setup.pool && setup.pool !== "all") parts.push(setup.pool);
+  const types = setup.types || ["mcq", "saq"];
+  if (types.length === 1) parts.push(types[0].toUpperCase());
+  else if (types.length < 2) parts.push("none selected");
   return parts.join(" · ");
 };
 
@@ -576,16 +665,20 @@ const setupForUnit = (unitName) => {
     .map((l) => l.slug);
 };
 
-const scopedQuestions = (setup) =>
-  filterByLectures(state.data.questions, setup.slugs);
+const scopedQuestions = (setup) => filterPool(setup);
 
 const unitScopeBanner = (setup) => {
   if (!setup.unitFocus) return "";
   const lectures = state.data.lectures.filter((l) => l.ready && l.unit === setup.unitFocus);
-  const count = scopedQuestions(setup).length;
+  const pool = scopedQuestions(setup);
+  const mcq = pool.filter((q) => isMcq(q)).length;
+  const saq = pool.filter((q) => isSaq(q)).length;
+  const typeBits = [];
+  if (mcq) typeBits.push(`${mcq} MCQ`);
+  if (saq) typeBits.push(`${saq} SAQ`);
   return `<div class="card" style="margin-bottom:18px;padding:14px 16px;border-color:rgba(88,166,255,0.35);background:rgba(88,166,255,0.06)">
     <div style="font-weight:700;margin-bottom:4px">${esc(setup.unitFocus)}</div>
-    <div style="font-size:13.5px;color:var(--text-muted)">${lectures.length} lecture${lectures.length === 1 ? "" : "s"} · ${count} question${count === 1 ? "" : "s"} from this unit's slides</div>
+    <div style="font-size:13.5px;color:var(--text-muted)">${lectures.length} lecture${lectures.length === 1 ? "" : "s"} · ${typeBits.join(" · ") || "0 questions"} from this unit's slides</div>
   </div>`;
 };
 
@@ -691,7 +784,6 @@ const viewHome = () => {
   const { units, lectures, questions } = state.data;
   const ready = lectures.filter((l) => l.ready);
   const overall = accuracyOf(questions.map((q) => q.id));
-  const answered = Object.keys(progress.stats).length;
 
   if (!questions.length) {
     return `<div class="empty">
@@ -705,10 +797,13 @@ const viewHome = () => {
     .map((u) => {
       const ids = questions.filter((q) => q.unit === u.name).map((q) => q.id);
       const acc = accuracyOf(ids);
+      const typeMeta = [];
+      if (u.mcqCount) typeMeta.push(`${u.mcqCount} MCQ`);
+      if (u.saqCount) typeMeta.push(`${u.saqCount} SAQ`);
       return `<div class="unit-card">
         <div class="unit-name">${esc(u.name)}</div>
         <div class="unit-meta">
-          <span>${u.ready} lecture${u.ready === 1 ? "" : "s"} · ${u.count} questions</span>
+          <span>${u.ready} lecture${u.ready === 1 ? "" : "s"} · ${typeMeta.join(" · ")}</span>
           <span>${acc.seen ? `${acc.pct}%` : "not started"}</span>
         </div>
         <div class="bar"><div class="bar-fill" style="width:${acc.seen ? acc.pct : 0}%"></div></div>
@@ -722,13 +817,13 @@ const viewHome = () => {
 
   return `
     <h1>PY411 Fundamentals of Pharmacy</h1>
-    <p class="sub">Multiple-choice revision built from the module lecture pack. Practice mode marks each answer as you go; exam mode gives you a timed paper and a full breakdown at the end.</p>
+    <p class="sub">Revision built from the module lecture pack — multiple-choice and short-answer questions. Practice mode marks each answer as you go; exam mode gives you a timed paper and a full breakdown at the end.</p>
 
     <div class="section tiles">
       <div class="tile"><div class="tile-value">${questions.length}</div><div class="tile-label">Questions in bank</div></div>
-      <div class="tile"><div class="tile-value">${ready.length}<span style="font-size:16px;color:var(--text-dim)">/${lectures.length}</span></div><div class="tile-label">Lectures covered</div></div>
+      <div class="tile"><div class="tile-value">${questions.filter((q) => isMcq(q)).length}</div><div class="tile-label">MCQs</div></div>
+      <div class="tile"><div class="tile-value">${questions.filter((q) => isSaq(q)).length}</div><div class="tile-label">SAQs</div></div>
       <div class="tile"><div class="tile-value" style="color:${overall.seen ? (overall.pct >= 70 ? "var(--green)" : overall.pct >= 50 ? "var(--amber)" : "var(--red)") : "var(--text)"}">${overall.seen ? `${overall.pct}%` : "-"}</div><div class="tile-label">Overall accuracy</div></div>
-      <div class="tile"><div class="tile-value">${answered}</div><div class="tile-label">Questions attempted</div></div>
     </div>
 
     <div class="section btn-row">
@@ -793,10 +888,23 @@ const poolChips = () => {
     .join("");
 };
 
-const availableCount = () => {
+const typeChips = () => {
   const setup = state.setup;
-  return filterByLectures(questionsForScope(setup), setup.slugs).length;
+  const types = setup.types || ["mcq", "saq"];
+  const all = filterByLectures(questionsForScope(setup), setup.slugs);
+  const counts = {
+    mcq: all.filter((q) => isMcq(q)).length,
+    saq: all.filter((q) => isSaq(q)).length,
+  };
+  return [
+    { key: "mcq", label: "MCQ" },
+    { key: "saq", label: "SAQ" },
+  ]
+    .map((o) => `<button class="chip ${types.includes(o.key) ? "on" : ""}" data-act="toggle-type" data-type="${o.key}" ${counts[o.key] ? "" : "disabled"}>${o.label} (${counts[o.key]})</button>`)
+    .join("");
 };
+
+const availableCount = () => filterPool(state.setup).length;
 
 const clearUnitFocusIfChanged = (setup) => {
   if (!setup.unitFocus) return;
@@ -815,10 +923,15 @@ const viewPracticeSetup = () => {
 
   return `
     <h1>Practice</h1>
-    <p class="sub">Answers are marked immediately: your pick turns green if it is right, red if not, and the correct option is always highlighted with an explanation.</p>
+    <p class="sub">Answers are marked immediately — MCQs highlight the correct option; SAQs are scored against key points from the model answer.</p>
     ${unitScopeBanner(setup)}
 
     <div class="card">
+      <div class="field">
+        <span class="field-label">Question types</span>
+        <div class="chips">${typeChips()}</div>
+      </div>
+
       <div class="field">
         <span class="field-label">Question pool</span>
         <div class="chips">${poolChips()}</div>
@@ -855,10 +968,15 @@ const viewExamSetup = () => {
 
   return `
     <h1>Exam</h1>
-    <p class="sub">A timed paper with no feedback until you submit. You can change answers and flag questions to come back to, then review everything you got wrong at the end.</p>
+    <p class="sub">A timed paper with no feedback until you submit. MCQs use multiple choice; SAQs use a text box and are keyword-marked at the end.</p>
     ${unitScopeBanner(setup)}
 
     <div class="card">
+      <div class="field">
+        <span class="field-label">Question types</span>
+        <div class="chips">${typeChips()}</div>
+      </div>
+
       <div class="field">
         <span class="field-label">Paper length</span>
         <div class="chips">
@@ -910,6 +1028,38 @@ const optionsHtml = (question, picked, locked) =>
     })
     .join("");
 
+const questionTypeBadge = (q) =>
+  `<span class="q-type ${isSaq(q) ? "saq" : "mcq"}">${isSaq(q) ? "Short answer" : "Multiple choice"}</span>`;
+
+const saqInputHtml = (question, value, locked, showSubmit) => {
+  const text = value === null || value === undefined ? "" : String(value);
+  return `<div class="saq-input">
+    <textarea id="saqAnswer" data-act="saq-input" placeholder="Type your answer here…" ${locked ? "disabled" : ""}>${esc(text)}</textarea>
+    ${showSubmit && !locked ? `<div class="btn-row" style="margin-top:10px"><button class="btn btn-primary" data-act="submit-saq" ${text.trim() ? "" : "disabled"}>Check answer</button></div>` : ""}
+  </div>`;
+};
+
+const saqFeedbackHtml = (question, userText) => {
+  const result = scoreSaqAnswer(userText, question.keywords);
+  const pctScore = Math.round(result.ratio * 100);
+  const keywords = question.keywords
+    .map((k) => {
+      const hit = result.matched.includes(k);
+      return `<span class="kw ${hit ? "hit" : "miss"}">${esc(k)}</span>`;
+    })
+    .join("");
+  return `<div class="feedback ${result.correct ? "correct" : "wrong"}">
+    <div class="feedback-head">${result.correct ? `Good — ${pctScore}% of key points` : `Not quite — ${pctScore}% of key points (need ${Math.round(SAQ_PASS_RATIO * 100)}%)`}</div>
+    <div class="keyword-list">${keywords}</div>
+    <div class="model-answer">
+      <div class="model-answer-label">Model answer</div>
+      <div>${esc(question.answer)}</div>
+    </div>
+    ${question.explanation ? `<div style="margin-top:8px">${esc(question.explanation)}</div>` : ""}
+    ${question.ref ? `<div class="feedback-ref">${esc(question.title)} · ${esc(question.ref)}</div>` : ""}
+  </div>`;
+};
+
 const viewPractice = () => {
   const session = state.session;
   if (!session) return viewPracticeSetup();
@@ -918,7 +1068,7 @@ const viewPractice = () => {
     const total = session.questions.length;
     const score = session.score;
     const percent = pct(score, total);
-    const missed = session.questions.filter((q, i) => session.answers[i] !== q.answer);
+    const missed = session.questions.filter((q, i) => !isAnswerCorrect(q, session.answers[i]));
     const message = percent >= 80 ? "Strong round. Push into a timed exam next."
       : percent >= 60 ? "Solid, but worth another pass over the ones you missed."
       : "Work through the missed questions before moving on.";
@@ -940,8 +1090,15 @@ const viewPractice = () => {
   const q = session.questions[session.index];
   const picked = session.answers[session.index];
   const locked = session.locked[session.index];
-  const isRight = locked && picked === q.answer;
+  const isRight = locked && isAnswerCorrect(q, picked);
   const done = session.index + (locked ? 1 : 0);
+  const body = isSaq(q)
+    ? `${saqInputHtml(q, picked, locked, true)}${locked ? saqFeedbackHtml(q, picked) : ""}`
+    : `<div class="opts">${optionsHtml(q, picked, locked)}</div>${locked ? `<div class="feedback ${isRight ? "correct" : "wrong"}">
+        <div class="feedback-head">${isRight ? "Correct" : `Not quite — the answer is ${LETTERS[q.answer]}`}</div>
+        <div>${esc(q.explanation)}</div>
+        ${q.ref ? `<div class="feedback-ref">${esc(q.title)} · ${esc(q.ref)}</div>` : ""}
+      </div>` : ""}`;
 
   return `
     <div class="runner-top">
@@ -952,20 +1109,15 @@ const viewPractice = () => {
 
     <div class="card">
       <div class="q-tag">${esc(q.title)}</div>
+      ${questionTypeBadge(q)}
       <div class="q-text">${esc(q.q)}</div>
-      <div class="opts">${optionsHtml(q, picked, locked)}</div>
-
-      ${locked ? `<div class="feedback ${isRight ? "correct" : "wrong"}">
-        <div class="feedback-head">${isRight ? "Correct" : `Not quite — the answer is ${LETTERS[q.answer]}`}</div>
-        <div>${esc(q.explanation)}</div>
-        ${q.ref ? `<div class="feedback-ref">${esc(q.title)} · ${esc(q.ref)}</div>` : ""}
-      </div>` : ""}
+      ${body}
 
       <div class="runner-actions">
         <button class="btn btn-ghost" data-act="flag">${isFlagged(q.id) ? "&#9733; Flagged" : "&#9734; Flag"}</button>
         <span class="spacer"></span>
         ${session.index > 0 ? `<button class="btn btn-ghost" data-act="prev">Back</button>` : ""}
-        ${locked ? `<button class="btn btn-primary" data-act="next">${session.index + 1 >= session.questions.length ? "See results" : "Next question"}</button>` : `<button class="btn btn-ghost" data-act="next">Skip</button>`}
+        ${locked ? `<button class="btn btn-primary" data-act="next">${session.index + 1 >= session.questions.length ? "See results" : "Next question"}</button>` : isSaq(q) ? "" : `<button class="btn btn-ghost" data-act="next">Skip</button>`}
       </div>
     </div>
 
@@ -980,18 +1132,22 @@ const viewExam = () => {
 
   const q = session.questions[session.index];
   const picked = session.answers[session.index];
-  const answered = session.answers.filter((a) => a !== null).length;
+  const answered = session.answers.filter((a, i) => hasAnswer(session.questions[i], a)).length;
   const left = session.endsAt ? (session.endsAt - Date.now()) / 1000 : null;
 
   const cells = session.questions
     .map((item, i) => {
       const cls = ["nav-cell"];
-      if (session.answers[i] !== null) cls.push("answered");
+      if (hasAnswer(item, session.answers[i])) cls.push("answered");
       if (i === session.index) cls.push("current");
       if (isFlagged(item.id)) cls.push("flagged");
       return `<button class="${cls.join(" ")}" data-act="jump" data-index="${i}">${i + 1}</button>`;
     })
     .join("");
+
+  const body = isSaq(q)
+    ? saqInputHtml(q, picked, false, false)
+    : `<div class="opts">${optionsHtml(q, picked, false)}</div>`;
 
   return `
     <div class="runner-top">
@@ -1003,12 +1159,13 @@ const viewExam = () => {
 
     <div class="card">
       <div class="q-tag">${esc(q.unit)}</div>
+      ${questionTypeBadge(q)}
       <div class="q-text">${esc(q.q)}</div>
-      <div class="opts">${optionsHtml(q, picked, false)}</div>
+      ${body}
 
       <div class="runner-actions">
         <button class="btn btn-ghost" data-act="flag">${isFlagged(q.id) ? "&#9733; Flagged" : "&#9734; Flag"}</button>
-        ${picked !== null ? `<button class="btn btn-ghost" data-act="clear-answer">Clear</button>` : ""}
+        ${hasAnswer(q, picked) ? `<button class="btn btn-ghost" data-act="clear-answer">Clear</button>` : ""}
         <span class="spacer"></span>
         <button class="btn btn-ghost" data-act="prev" ${session.index === 0 ? "disabled" : ""}>Back</button>
         <button class="btn" data-act="next" ${session.index + 1 >= session.questions.length ? "disabled" : ""}>Next</button>
@@ -1052,7 +1209,22 @@ const viewResults = () => {
 
   const reviewHtml = wrong.length
     ? wrong
-        .map((item) => `<div class="review-item">
+        .map((item) => {
+          if (isSaq(item)) {
+            const result = scoreSaqAnswer(item.picked, item.keywords);
+            return `<div class="review-item">
+          <div class="q-tag">${esc(item.title)} · Short answer</div>
+          <div class="review-q">${esc(item.q)}</div>
+          ${!hasAnswer(item, item.picked)
+            ? `<div class="review-line skipped">Not answered</div>`
+            : `<div class="review-line yours">Your answer: ${esc(item.picked)}</div>
+               <div class="keyword-list">${item.keywords.map((k) => `<span class="kw ${result.matched.includes(k) ? "hit" : "miss"}">${esc(k)}</span>`).join("")}</div>`}
+          <div class="model-answer"><div class="model-answer-label">Model answer</div><div>${esc(item.answer)}</div></div>
+          ${item.explanation ? `<div class="review-exp">${esc(item.explanation)}</div>` : ""}
+          ${item.ref ? `<div class="feedback-ref">${esc(item.title)} · ${esc(item.ref)}</div>` : ""}
+        </div>`;
+          }
+          return `<div class="review-item">
           <div class="q-tag">${esc(item.title)}</div>
           <div class="review-q">${esc(item.q)}</div>
           ${item.picked === null
@@ -1061,7 +1233,8 @@ const viewResults = () => {
           <div class="review-line answer">Correct: ${LETTERS[item.answer]}. ${esc(item.options[item.answer])}</div>
           ${item.explanation ? `<div class="review-exp">${esc(item.explanation)}</div>` : ""}
           ${item.ref ? `<div class="feedback-ref">${esc(item.title)} · ${esc(item.ref)}</div>` : ""}
-        </div>`)
+        </div>`;
+        })
         .join("")
     : `<div class="card" style="text-align:center;color:var(--green)">Full marks — nothing to review.</div>`;
 
@@ -1200,6 +1373,7 @@ const render = () => {
 
 const defaultSetup = () => ({
   pool: "all",
+  types: ["mcq", "saq"],
   slugs: state.data.lectures.filter((l) => l.ready).map((l) => l.slug),
   count: 20,
   timed: true,
@@ -1228,10 +1402,10 @@ const finishExam = (autoSubmitted) => {
   let skipped = 0;
   const review = session.questions.map((q, i) => {
     const picked = session.answers[i];
-    const correct = picked === q.answer;
+    const correct = isAnswerCorrect(q, picked);
     if (correct) score += 1;
-    if (picked === null) skipped += 1;
-    if (picked !== null) recordAnswer(q.id, correct);
+    if (!hasAnswer(q, picked)) skipped += 1;
+    if (hasAnswer(q, picked)) recordAnswer(q.id, correct);
     return { ...q, picked, correct };
   });
 
@@ -1296,6 +1470,16 @@ const handle = (act, el) => {
       render();
       return;
 
+    case "toggle-type": {
+      const type = el.dataset.type;
+      if (!setup.types) setup.types = ["mcq", "saq"];
+      const at = setup.types.indexOf(type);
+      if (at === -1) setup.types.push(type);
+      else if (setup.types.length > 1) setup.types.splice(at, 1);
+      render();
+      return;
+    }
+
     case "pick-lecture": {
       const slug = el.dataset.slug;
       const at = setup.slugs.indexOf(slug);
@@ -1344,8 +1528,8 @@ const handle = (act, el) => {
     }
 
     case "start-practice": {
-      const pool = filterByLectures(questionsForScope(setup), setup.slugs);
-      if (!pool.length) return;
+      const pool = filterPool(setup);
+      if (!pool.length || !setup.types?.length) return;
       const picked = shuffle(pool).slice(0, setup.count === 0 ? pool.length : setup.count);
       startSession("practice", picked, { label: scopeLabel(setup) });
       return;
@@ -1354,8 +1538,8 @@ const handle = (act, el) => {
     case "start-exam": {
       const input = document.getElementById("examMinutes");
       if (input) setup.minutes = Math.max(1, Math.min(300, Number(input.value) || setup.minutes));
-      const pool = filterByLectures(questionsForScope(setup), setup.slugs);
-      if (!pool.length) return;
+      const pool = filterPool(setup);
+      if (!pool.length || !setup.types?.length) return;
       const picked = shuffle(pool).slice(0, setup.count === 0 ? pool.length : setup.count);
       startSession("exam", picked, {
         label: `${picked.length}Q · ${scopeLabel(setup)}${setup.timed ? ` · ${setup.minutes}min` : ""}`,
@@ -1367,10 +1551,11 @@ const handle = (act, el) => {
     /* ---- shared runner ---- */
     case "pick": {
       if (!session) return;
+      const q = session.questions[session.index];
+      if (!isMcq(q)) return;
       const index = Number(el.dataset.index);
       if (session.mode === "practice") {
         if (session.locked[session.index]) return;
-        const q = session.questions[session.index];
         session.answers[session.index] = index;
         session.locked[session.index] = true;
         const correct = index === q.answer;
@@ -1379,6 +1564,23 @@ const handle = (act, el) => {
       } else {
         session.answers[session.index] = index;
       }
+      render();
+      return;
+    }
+
+    case "submit-saq": {
+      if (!session || session.mode !== "practice") return;
+      if (session.locked[session.index]) return;
+      const q = session.questions[session.index];
+      if (!isSaq(q)) return;
+      const textarea = document.getElementById("saqAnswer");
+      const text = textarea ? textarea.value.trim() : "";
+      if (!text) return;
+      session.answers[session.index] = text;
+      session.locked[session.index] = true;
+      const correct = isAnswerCorrect(q, text);
+      if (correct) session.score += 1;
+      recordAnswer(q.id, correct);
       render();
       return;
     }
@@ -1416,7 +1618,9 @@ const handle = (act, el) => {
     /* ---- practice endings ---- */
     case "retry-missed": {
       if (!session) return;
-      const missedIds = session.questions.filter((q, i) => session.answers[i] !== q.answer).map((q) => q.id);
+      const missedIds = session.questions
+        .filter((q, i) => !isAnswerCorrect(q, session.answers[i]))
+        .map((q) => q.id);
       const pool = state.data.questions.filter((q) => missedIds.includes(q.id));
       startSession("practice", shuffle(pool), { label: "Missed questions" });
       return;
@@ -1434,7 +1638,7 @@ const handle = (act, el) => {
     /* ---- exam endings ---- */
     case "submit-exam": {
       if (!session) return;
-      const blank = session.answers.filter((a) => a === null).length;
+      const blank = session.questions.filter((q, i) => !hasAnswer(q, session.answers[i])).length;
       showModal(
         "Submit your paper?",
         blank
@@ -1491,16 +1695,27 @@ document.addEventListener("click", (event) => {
   handle(el.dataset.act, el);
 });
 
+document.addEventListener("input", (event) => {
+  if (event.target.id !== "saqAnswer") return;
+  const session = state.session;
+  if (!session) return;
+  session.answers[session.index] = event.target.value;
+  if (session.mode === "practice" && !session.locked[session.index]) {
+    const btn = document.querySelector('[data-act="submit-saq"]');
+    if (btn) btn.disabled = !String(event.target.value).trim();
+  }
+});
+
 document.addEventListener("keydown", (event) => {
   const session = state.session;
   if (!session || (state.view !== "practice" && state.view !== "exam")) return;
-  if (event.target.tagName === "INPUT") return;
+  if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA") return;
 
   const key = event.key.toUpperCase();
   const letterIndex = LETTERS.indexOf(key);
   const current = session.questions[session.index];
 
-  if (current && letterIndex > -1 && letterIndex < current.options.length) {
+  if (current && isMcq(current) && letterIndex > -1 && letterIndex < current.options.length) {
     event.preventDefault();
     handle("pick", { dataset: { index: String(letterIndex) } });
     return;
