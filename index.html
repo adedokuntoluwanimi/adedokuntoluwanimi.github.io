@@ -1,0 +1,1537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PY411 Reviser</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1e2530;
+    --border: #30363d;
+    --border2: #3d444d;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --green-bg: rgba(63, 185, 80, 0.12);
+    --red: #f85149;
+    --red-bg: rgba(248, 81, 73, 0.12);
+    --amber: #ffa657;
+    --purple: #d2a8ff;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --text-dim: #6e7681;
+    --radius: 10px;
+    --mono: 'Space Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  button { font-family: inherit; cursor: pointer; }
+  button:disabled { cursor: default; }
+
+  /* ---------- header ---------- */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    padding: 16px 24px;
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 60%, #0d1117 100%);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .logo span { color: var(--green); }
+
+  .nav { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+
+  .nav-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    padding: 7px 14px;
+    border-radius: 99px;
+    font-size: 13.5px;
+    font-weight: 600;
+    transition: all 0.15s;
+  }
+  .nav-btn:hover { color: var(--text); background: var(--surface2); }
+  .nav-btn.active { color: var(--accent); border-color: rgba(88,166,255,0.4); background: rgba(88,166,255,0.08); }
+
+  /* ---------- layout ---------- */
+  main { max-width: 940px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 6px; }
+  h2 { font-size: 18px; font-weight: 700; margin-bottom: 14px; }
+  .sub { color: var(--text-muted); font-size: 14.5px; line-height: 1.55; margin-bottom: 26px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  .section { margin-bottom: 28px; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+
+  /* ---------- stat tiles ---------- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .tile-value { font-family: var(--mono); font-size: 26px; font-weight: 700; line-height: 1.1; }
+  .tile-label { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; }
+
+  /* ---------- unit cards ---------- */
+  .unit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .unit-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .unit-name { font-weight: 700; font-size: 15px; }
+  .unit-meta { font-size: 12.5px; color: var(--text-muted); display: flex; justify-content: space-between; gap: 10px; }
+  .unit-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; }
+  .unit-actions .btn { flex: 1; padding: 8px 12px; font-size: 13px; }
+
+  .bar { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--green)); transition: width 0.4s ease; }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.15s;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn:disabled { opacity: 0.45; }
+
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #04101f; }
+  .btn-primary:hover:not(:disabled) { background: #79c0ff; border-color: #79c0ff; color: #04101f; }
+
+  .btn-ghost { background: transparent; border-color: var(--border); color: var(--text-muted); }
+  .btn-ghost:hover:not(:disabled) { color: var(--text); border-color: var(--border2); }
+
+  .btn-danger { background: transparent; border-color: rgba(248,81,73,0.4); color: var(--red); }
+  .btn-danger:hover:not(:disabled) { background: var(--red-bg); border-color: var(--red); color: var(--red); }
+
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* ---------- setup form ---------- */
+  .field { margin-bottom: 22px; }
+  .field-label { font-size: 13px; font-weight: 600; margin-bottom: 8px; display: block; }
+  .field-hint { font-size: 12.5px; color: var(--text-dim); margin-top: 6px; }
+
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 8px 14px;
+    border-radius: 99px;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.15s;
+  }
+  .chip:hover:not(:disabled) { color: var(--text); border-color: var(--border2); }
+  .chip.on { background: rgba(88,166,255,0.12); border-color: var(--accent); color: var(--accent); }
+  .chip:disabled { opacity: 0.35; }
+
+  input[type="number"], select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    min-width: 110px;
+  }
+  input[type="number"]:focus, select:focus { outline: none; border-color: var(--accent); }
+
+  .lecture-picker {
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px;
+    background: var(--bg);
+  }
+  .lecture-picker::-webkit-scrollbar { width: 6px; }
+  .lecture-picker::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  .pick-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    width: 100%;
+    background: transparent;
+    border: none;
+    text-align: left;
+    transition: background 0.12s;
+  }
+  .pick-row:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
+  .pick-row.on { color: var(--text); }
+  .pick-row:disabled { opacity: 0.4; }
+  .pick-box {
+    width: 15px; height: 15px; border-radius: 4px; flex-shrink: 0;
+    border: 1px solid var(--border2); display: grid; place-items: center;
+    font-size: 10px; color: #04101f;
+  }
+  .pick-row.on .pick-box { background: var(--accent); border-color: var(--accent); }
+  .pick-count { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); }
+  .pick-unit { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); padding: 12px 10px 4px; }
+
+  /* ---------- runner ---------- */
+  .runner-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  .runner-meta { font-family: var(--mono); font-size: 12.5px; color: var(--text-muted); }
+  .timer { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--text); margin-left: auto; }
+  .timer.low { color: var(--red); }
+
+  .q-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 99px;
+    background: rgba(210,168,255,0.12);
+    border: 1px solid rgba(210,168,255,0.3);
+    color: var(--purple);
+    margin-bottom: 12px;
+  }
+
+  .q-text { font-size: 18px; font-weight: 600; line-height: 1.45; margin-bottom: 18px; }
+
+  .opts { display: flex; flex-direction: column; gap: 9px; }
+
+  .opt {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    text-align: left;
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 13px 15px;
+    border-radius: 8px;
+    font-size: 14.5px;
+    line-height: 1.45;
+    transition: all 0.15s;
+  }
+  .opt:hover:not(:disabled) { border-color: var(--border2); background: #232b38; }
+  .opt-key {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-dim);
+    flex-shrink: 0;
+    padding-top: 1px;
+  }
+  .opt.picked { border-color: var(--accent); background: rgba(88,166,255,0.1); }
+  .opt.picked .opt-key { color: var(--accent); }
+  .opt.correct { border-color: var(--green); background: var(--green-bg); color: var(--text); }
+  .opt.correct .opt-key { color: var(--green); }
+  .opt.wrong { border-color: var(--red); background: var(--red-bg); }
+  .opt.wrong .opt-key { color: var(--red); }
+  .opt:disabled { opacity: 1; }
+
+  .feedback {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .feedback.correct { background: var(--green-bg); border: 1px solid rgba(63,185,80,0.3); }
+  .feedback.wrong { background: var(--red-bg); border: 1px solid rgba(248,81,73,0.3); }
+  .feedback-head { font-weight: 700; margin-bottom: 6px; }
+  .feedback.correct .feedback-head { color: var(--green); }
+  .feedback.wrong .feedback-head { color: var(--red); }
+  .feedback-ref { font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); margin-top: 8px; }
+
+  .runner-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+  .runner-actions .spacer { flex: 1; }
+
+  /* ---------- navigator ---------- */
+  .nav-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+  .nav-cell {
+    width: 34px; height: 34px;
+    border-radius: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    position: relative;
+    transition: all 0.12s;
+  }
+  .nav-cell:hover { border-color: var(--border2); color: var(--text); }
+  .nav-cell.answered { background: rgba(88,166,255,0.14); border-color: rgba(88,166,255,0.5); color: var(--accent); }
+  .nav-cell.current { outline: 2px solid var(--text); outline-offset: 1px; }
+  .nav-cell.flagged::after {
+    content: "";
+    position: absolute; top: 3px; right: 3px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--amber);
+  }
+
+  /* ---------- results ---------- */
+  .score-big { font-family: var(--mono); font-size: 54px; font-weight: 700; line-height: 1; }
+  .score-sub { font-size: 15px; color: var(--text-muted); margin-top: 8px; }
+  .verdict { font-size: 15px; line-height: 1.6; margin-top: 14px; }
+
+  .breakdown-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 13.5px; }
+  .breakdown-name { width: 190px; flex-shrink: 0; color: var(--text-muted); }
+  .breakdown-bar { flex: 1; min-width: 60px; }
+  .breakdown-val { font-family: var(--mono); font-size: 12.5px; color: var(--text-muted); width: 62px; text-align: right; flex-shrink: 0; }
+
+  .review-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; background: var(--surface); }
+  .review-q { font-weight: 600; font-size: 15px; line-height: 1.45; margin: 8px 0 12px; }
+  .review-line { font-size: 13.5px; line-height: 1.5; padding: 7px 11px; border-radius: 6px; margin-bottom: 6px; }
+  .review-line.yours { background: var(--red-bg); color: #ffb4ae; }
+  .review-line.skipped { background: var(--surface2); color: var(--text-muted); }
+  .review-line.answer { background: var(--green-bg); color: #8fe0a0; }
+  .review-exp { font-size: 13.5px; color: var(--text-muted); line-height: 1.55; margin-top: 10px; }
+
+  /* ---------- progress table ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th {
+    text-align: left; padding: 9px 10px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--text-dim); border-bottom: 1px solid var(--border); font-weight: 400;
+  }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); color: var(--text-muted); }
+  td.name { color: var(--text); }
+  .num { font-family: var(--mono); text-align: right; }
+
+  /* ---------- modal ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(1,4,9,0.75);
+    display: grid; place-items: center;
+    padding: 20px;
+  }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 24px;
+    width: min(94vw, 420px);
+  }
+  .modal h3 { font-size: 17px; margin-bottom: 8px; }
+  .modal p { font-size: 14px; color: var(--text-muted); line-height: 1.55; margin-bottom: 20px; }
+  .modal .btn-row { justify-content: flex-end; }
+
+  .empty { text-align: center; padding: 50px 20px; color: var(--text-muted); }
+  .empty-title { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+
+  .hidden { display: none !important; }
+
+  @media (max-width: 620px) {
+    main { padding: 22px 14px 70px; }
+    .q-text { font-size: 16.5px; }
+    .breakdown-name { width: 120px; font-size: 12.5px; }
+    .score-big { font-size: 44px; }
+    header { padding: 14px 16px; gap: 12px; }
+    .nav { width: 100%; margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">PY411<span>/</span>REVISER</div>
+  <nav class="nav" id="nav"></nav>
+</header>
+
+<main id="app"></main>
+<div id="modalHost"></div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   State
+   ============================================================ */
+
+const STORE_KEY = "py411-reviser-v1";
+const LETTERS = ["A", "B", "C", "D", "E", "F"];
+
+const state = {
+  data: null,          // { units, lectures, questions }
+  view: "home",
+  session: null,       // active practice/exam session
+  results: null,       // last finished session
+  setup: null,         // setup form state
+  error: null,
+};
+
+let progress = { v: 1, stats: {}, flags: [], attempts: [] };
+let timerId = null;
+
+const loadProgress = () => {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      progress = {
+        v: 1,
+        stats: parsed.stats && typeof parsed.stats === "object" ? parsed.stats : {},
+        flags: Array.isArray(parsed.flags) ? parsed.flags : [],
+        attempts: Array.isArray(parsed.attempts) ? parsed.attempts : [],
+      };
+    }
+  } catch (err) {
+    console.warn("Could not read saved progress:", err.message);
+  }
+};
+
+const saveProgress = () => {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(progress));
+  } catch (err) {
+    console.warn("Could not save progress:", err.message);
+  }
+};
+
+const recordAnswer = (id, correct) => {
+  const entry = progress.stats[id] || { seen: 0, correct: 0 };
+  entry.seen += 1;
+  if (correct) entry.correct += 1;
+  progress.stats[id] = entry;
+  saveProgress();
+};
+
+const isFlagged = (id) => progress.flags.includes(id);
+
+const toggleFlag = (id) => {
+  const at = progress.flags.indexOf(id);
+  if (at === -1) progress.flags.push(id);
+  else progress.flags.splice(at, 1);
+  saveProgress();
+};
+
+/* ============================================================
+   Helpers
+   ============================================================ */
+
+const esc = (value) =>
+  String(value === undefined || value === null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+const shuffle = (items) => {
+  const out = items.slice();
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+};
+
+const pct = (part, total) => (total ? Math.round((part / total) * 100) : 0);
+
+const clockText = (totalSeconds) => {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const m = Math.floor(s / 60);
+  return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+};
+
+const durationText = (seconds) => {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${String(s % 60).padStart(2, "0")}s`;
+};
+
+const dateText = (iso) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+};
+
+// Options are shuffled per sitting, so the answer index is remapped with them.
+const prepareQuestion = (q) => {
+  const paired = q.options.map((text, index) => ({ text, correct: index === q.answer }));
+  const mixed = shuffle(paired);
+  return {
+    id: q.id,
+    q: q.q,
+    options: mixed.map((o) => o.text),
+    answer: mixed.findIndex((o) => o.correct),
+    explanation: q.explanation || "",
+    ref: q.ref || "",
+    difficulty: q.difficulty || "",
+    slug: q.slug,
+    title: q.title,
+    unit: q.unit,
+  };
+};
+
+const accuracyOf = (ids) => {
+  let seen = 0;
+  let correct = 0;
+  for (const id of ids) {
+    const entry = progress.stats[id];
+    if (!entry || !entry.seen) continue;
+    seen += entry.seen;
+    correct += entry.correct;
+  }
+  return { seen, correct, pct: pct(correct, seen) };
+};
+
+/* ============================================================
+   Session building
+   ============================================================ */
+
+const questionsForScope = (scope) => {
+  const all = state.data.questions;
+  if (scope.pool === "missed") {
+    return all.filter((q) => {
+      const entry = progress.stats[q.id];
+      return entry && entry.seen > 0 && entry.correct < entry.seen;
+    });
+  }
+  if (scope.pool === "flagged") return all.filter((q) => isFlagged(q.id));
+  if (scope.pool === "unseen") return all.filter((q) => !progress.stats[q.id]);
+  return all;
+};
+
+const filterByLectures = (questions, slugs) =>
+  !slugs || !slugs.length ? questions : questions.filter((q) => slugs.includes(q.slug));
+
+const scopeLabel = (setup) => {
+  const parts = [];
+  const ready = state.data.lectures.filter((l) => l.ready);
+  if (!setup.slugs.length || setup.slugs.length === ready.length) {
+    parts.push("All lectures");
+  } else if (setup.slugs.length === 1) {
+    const lecture = state.data.lectures.find((l) => l.slug === setup.slugs[0]);
+    parts.push(lecture ? lecture.title : "1 lecture");
+  } else {
+    const units = [...new Set(
+      setup.slugs
+        .map((slug) => ready.find((l) => l.slug === slug)?.unit)
+        .filter(Boolean)
+    )];
+    if (units.length === 1) {
+      const unitLectures = ready.filter((l) => l.unit === units[0]);
+      if (unitLectures.length && unitLectures.every((l) => setup.slugs.includes(l.slug))) {
+        parts.push(units[0]);
+      } else {
+        parts.push(`${setup.slugs.length} lectures`);
+      }
+    } else {
+      parts.push(`${setup.slugs.length} lectures`);
+    }
+  }
+  if (setup.pool && setup.pool !== "all") parts.push(setup.pool);
+  return parts.join(" · ");
+};
+
+const setupForUnit = (unitName) => {
+  state.setup = defaultSetup();
+  state.setup.unitFocus = unitName;
+  state.setup.slugs = state.data.lectures
+    .filter((l) => l.ready && l.unit === unitName)
+    .map((l) => l.slug);
+};
+
+const scopedQuestions = (setup) =>
+  filterByLectures(state.data.questions, setup.slugs);
+
+const unitScopeBanner = (setup) => {
+  if (!setup.unitFocus) return "";
+  const lectures = state.data.lectures.filter((l) => l.ready && l.unit === setup.unitFocus);
+  const count = scopedQuestions(setup).length;
+  return `<div class="card" style="margin-bottom:18px;padding:14px 16px;border-color:rgba(88,166,255,0.35);background:rgba(88,166,255,0.06)">
+    <div style="font-weight:700;margin-bottom:4px">${esc(setup.unitFocus)}</div>
+    <div style="font-size:13.5px;color:var(--text-muted)">${lectures.length} lecture${lectures.length === 1 ? "" : "s"} · ${count} question${count === 1 ? "" : "s"} from this unit's slides</div>
+  </div>`;
+};
+
+const startSession = (mode, questions, options = {}) => {
+  const prepared = questions.map(prepareQuestion);
+  state.session = {
+    mode,
+    questions: prepared,
+    answers: new Array(prepared.length).fill(null),
+    locked: new Array(prepared.length).fill(false),
+    index: 0,
+    score: 0,
+    startedAt: Date.now(),
+    durationMs: options.durationMs || null,
+    endsAt: options.durationMs ? Date.now() + options.durationMs : null,
+    label: options.label || "",
+  };
+  state.results = null;
+  state.view = mode;
+  stopTimer();
+  if (state.session.endsAt) startTimer();
+  render();
+};
+
+/* ============================================================
+   Timer
+   ============================================================ */
+
+const startTimer = () => {
+  stopTimer();
+  timerId = setInterval(() => {
+    const session = state.session;
+    if (!session || !session.endsAt) {
+      stopTimer();
+      return;
+    }
+    const left = session.endsAt - Date.now();
+    if (left <= 0) {
+      stopTimer();
+      finishExam(true);
+      return;
+    }
+    const el = document.getElementById("timer");
+    if (el) {
+      el.textContent = clockText(left / 1000);
+      el.classList.toggle("low", left <= 60000);
+    }
+  }, 1000);
+};
+
+const stopTimer = () => {
+  if (timerId) clearInterval(timerId);
+  timerId = null;
+};
+
+/* ============================================================
+   Modal
+   ============================================================ */
+
+let modalAction = null;
+
+const showModal = (title, body, confirmText, onConfirm, danger) => {
+  modalAction = onConfirm;
+  document.getElementById("modalHost").innerHTML = `
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h3>${esc(title)}</h3>
+        <p>${esc(body)}</p>
+        <div class="btn-row">
+          <button class="btn btn-ghost" data-act="modal-cancel">Cancel</button>
+          <button class="btn ${danger ? "btn-danger" : "btn-primary"}" data-act="modal-confirm">${esc(confirmText)}</button>
+        </div>
+      </div>
+    </div>`;
+};
+
+const closeModal = () => {
+  modalAction = null;
+  document.getElementById("modalHost").innerHTML = "";
+};
+
+/* ============================================================
+   Views
+   ============================================================ */
+
+const renderNav = () => {
+  const items = [
+    { view: "home", label: "Home" },
+    { view: "practice-setup", label: "Practice" },
+    { view: "exam-setup", label: "Exam" },
+    { view: "progress", label: "Progress" },
+  ];
+  const active = state.view.startsWith("practice") ? "practice-setup"
+    : state.view.startsWith("exam") || state.view === "results" ? "exam-setup"
+    : state.view;
+
+  document.getElementById("nav").innerHTML = items
+    .map((item) => `<button class="nav-btn ${item.view === active ? "active" : ""}" data-act="go" data-view="${item.view}">${item.label}</button>`)
+    .join("");
+};
+
+const viewHome = () => {
+  const { units, lectures, questions } = state.data;
+  const ready = lectures.filter((l) => l.ready);
+  const overall = accuracyOf(questions.map((q) => q.id));
+  const answered = Object.keys(progress.stats).length;
+
+  if (!questions.length) {
+    return `<div class="empty">
+      <div class="empty-title">No questions yet</div>
+      <p>The question bank is still being written. Add lecture JSON files to <code>data/bank/</code> and refresh.</p>
+    </div>`;
+  }
+
+  const unitCards = units
+    .filter((u) => u.count > 0)
+    .map((u) => {
+      const ids = questions.filter((q) => q.unit === u.name).map((q) => q.id);
+      const acc = accuracyOf(ids);
+      return `<div class="unit-card">
+        <div class="unit-name">${esc(u.name)}</div>
+        <div class="unit-meta">
+          <span>${u.ready} lecture${u.ready === 1 ? "" : "s"} · ${u.count} questions</span>
+          <span>${acc.seen ? `${acc.pct}%` : "not started"}</span>
+        </div>
+        <div class="bar"><div class="bar-fill" style="width:${acc.seen ? acc.pct : 0}%"></div></div>
+        <div class="unit-actions">
+          <button class="btn" data-act="unit-practice" data-unit="${esc(u.name)}">Practice</button>
+          <button class="btn btn-primary" data-act="unit-exam" data-unit="${esc(u.name)}">Exam</button>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  return `
+    <h1>PY411 Fundamentals of Pharmacy</h1>
+    <p class="sub">Multiple-choice revision built from the module lecture pack. Practice mode marks each answer as you go; exam mode gives you a timed paper and a full breakdown at the end.</p>
+
+    <div class="section tiles">
+      <div class="tile"><div class="tile-value">${questions.length}</div><div class="tile-label">Questions in bank</div></div>
+      <div class="tile"><div class="tile-value">${ready.length}<span style="font-size:16px;color:var(--text-dim)">/${lectures.length}</span></div><div class="tile-label">Lectures covered</div></div>
+      <div class="tile"><div class="tile-value" style="color:${overall.seen ? (overall.pct >= 70 ? "var(--green)" : overall.pct >= 50 ? "var(--amber)" : "var(--red)") : "var(--text)"}">${overall.seen ? `${overall.pct}%` : "-"}</div><div class="tile-label">Overall accuracy</div></div>
+      <div class="tile"><div class="tile-value">${answered}</div><div class="tile-label">Questions attempted</div></div>
+    </div>
+
+    <div class="section btn-row">
+      <button class="btn btn-primary" data-act="go" data-view="practice-setup">Start practice</button>
+      <button class="btn" data-act="go" data-view="exam-setup">Sit an exam</button>
+      ${progress.attempts.length ? `<button class="btn btn-ghost" data-act="go" data-view="progress">View progress</button>` : ""}
+    </div>
+
+    <div class="section">
+      <div class="eyebrow">Units</div>
+      <div class="unit-grid">${unitCards}</div>
+    </div>`;
+};
+
+const lecturePicker = () => {
+  const setup = state.setup;
+  const byUnit = new Map();
+  for (const lecture of state.data.lectures) {
+    if (!byUnit.has(lecture.unit)) byUnit.set(lecture.unit, []);
+    byUnit.get(lecture.unit).push(lecture);
+  }
+
+  let html = "";
+  for (const [unit, lectures] of byUnit) {
+    if (!lectures.some((l) => l.ready)) continue;
+    const allOn = lectures.filter((l) => l.ready).every((l) => setup.slugs.includes(l.slug));
+    html += `<div class="pick-unit">${esc(unit)}
+      <button class="chip" style="padding:2px 9px;font-size:11px;margin-left:8px" data-act="pick-unit" data-unit="${esc(unit)}">${allOn ? "clear" : "all"}</button>
+    </div>`;
+    for (const lecture of lectures) {
+      const on = setup.slugs.includes(lecture.slug);
+      html += `<button class="pick-row ${on ? "on" : ""}" data-act="pick-lecture" data-slug="${esc(lecture.slug)}" ${lecture.ready ? "" : "disabled"}>
+        <span class="pick-box">${on ? "&#10003;" : ""}</span>
+        <span>${esc(lecture.title)}</span>
+        <span class="pick-count">${lecture.ready ? lecture.count : "soon"}</span>
+      </button>`;
+    }
+  }
+  return `<div class="lecture-picker">${html}</div>`;
+};
+
+const poolChips = () => {
+  const setup = state.setup;
+  const all = scopedQuestions(setup);
+  const counts = {
+    all: all.length,
+    unseen: all.filter((q) => !progress.stats[q.id]).length,
+    missed: all.filter((q) => {
+      const entry = progress.stats[q.id];
+      return entry && entry.seen > 0 && entry.correct < entry.seen;
+    }).length,
+    flagged: all.filter((q) => isFlagged(q.id)).length,
+  };
+  const options = [
+    { key: "all", label: "All questions" },
+    { key: "unseen", label: "Not yet seen" },
+    { key: "missed", label: "Previously missed" },
+    { key: "flagged", label: "Flagged" },
+  ];
+  return options
+    .map((o) => `<button class="chip ${setup.pool === o.key ? "on" : ""}" data-act="pool" data-pool="${o.key}" ${counts[o.key] ? "" : "disabled"}>${o.label} (${counts[o.key]})</button>`)
+    .join("");
+};
+
+const availableCount = () => {
+  const setup = state.setup;
+  return filterByLectures(questionsForScope(setup), setup.slugs).length;
+};
+
+const clearUnitFocusIfChanged = (setup) => {
+  if (!setup.unitFocus) return;
+  const unitSlugs = state.data.lectures
+    .filter((l) => l.ready && l.unit === setup.unitFocus)
+    .map((l) => l.slug);
+  const same =
+    setup.slugs.length === unitSlugs.length &&
+    unitSlugs.every((slug) => setup.slugs.includes(slug));
+  if (!same) setup.unitFocus = null;
+};
+
+const viewPracticeSetup = () => {
+  const setup = state.setup;
+  const available = availableCount();
+
+  return `
+    <h1>Practice</h1>
+    <p class="sub">Answers are marked immediately: your pick turns green if it is right, red if not, and the correct option is always highlighted with an explanation.</p>
+    ${unitScopeBanner(setup)}
+
+    <div class="card">
+      <div class="field">
+        <span class="field-label">Question pool</span>
+        <div class="chips">${poolChips()}</div>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Lectures <span style="color:var(--text-dim);font-weight:400">(${setup.slugs.length} selected)</span></span>
+        <div class="btn-row" style="margin-bottom:8px">
+          <button class="chip" data-act="pick-all">Select all</button>
+          <button class="chip" data-act="pick-none">Clear</button>
+        </div>
+        ${lecturePicker()}
+      </div>
+
+      <div class="field">
+        <span class="field-label">How many questions?</span>
+        <div class="chips">
+          ${[10, 20, 40, 0].map((n) => `<button class="chip ${setup.count === n ? "on" : ""}" data-act="count" data-count="${n}">${n === 0 ? "Everything" : n}</button>`).join("")}
+        </div>
+        <div class="field-hint">${available} question${available === 1 ? "" : "s"} match your selection.</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" data-act="start-practice" ${available ? "" : "disabled"}>Start practice</button>
+        <button class="btn btn-ghost" data-act="go" data-view="home">Back</button>
+      </div>
+    </div>`;
+};
+
+const viewExamSetup = () => {
+  const setup = state.setup;
+  const available = availableCount();
+  const count = setup.count === 0 ? available : Math.min(setup.count, available);
+
+  return `
+    <h1>Exam</h1>
+    <p class="sub">A timed paper with no feedback until you submit. You can change answers and flag questions to come back to, then review everything you got wrong at the end.</p>
+    ${unitScopeBanner(setup)}
+
+    <div class="card">
+      <div class="field">
+        <span class="field-label">Paper length</span>
+        <div class="chips">
+          ${[10, 25, 50, 100, 0].map((n) => `<button class="chip ${setup.count === n ? "on" : ""}" data-act="count" data-count="${n}">${n === 0 ? "Everything" : `${n} questions`}</button>`).join("")}
+        </div>
+        <div class="field-hint">${available} question${available === 1 ? "" : "s"} available — this paper will have ${count}.</div>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Topics <span style="color:var(--text-dim);font-weight:400">(${setup.slugs.length} lectures selected)</span></span>
+        <div class="btn-row" style="margin-bottom:8px">
+          <button class="chip" data-act="pick-all">Select all</button>
+          <button class="chip" data-act="pick-none">Clear</button>
+        </div>
+        ${lecturePicker()}
+      </div>
+
+      <div class="field">
+        <span class="field-label">Timer</span>
+        <div class="chips" style="align-items:center">
+          <button class="chip ${setup.timed ? "on" : ""}" data-act="timer-toggle">${setup.timed ? "Timed" : "No timer"}</button>
+          ${setup.timed ? `<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--text-muted)">
+            <input type="number" id="examMinutes" min="1" max="300" value="${setup.minutes}"> minutes
+          </label>` : ""}
+        </div>
+        ${setup.timed ? `<div class="field-hint">The paper submits itself automatically when the time runs out.</div>` : ""}
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" data-act="start-exam" ${available ? "" : "disabled"}>Start exam</button>
+        <button class="btn btn-ghost" data-act="go" data-view="home">Back</button>
+      </div>
+    </div>`;
+};
+
+const optionsHtml = (question, picked, locked) =>
+  question.options
+    .map((text, i) => {
+      let cls = "opt";
+      if (locked) {
+        if (i === question.answer) cls += " correct";
+        else if (i === picked) cls += " wrong";
+      } else if (i === picked) {
+        cls += " picked";
+      }
+      return `<button class="${cls}" data-act="pick" data-index="${i}" ${locked ? "disabled" : ""}>
+        <span class="opt-key">${LETTERS[i]}</span><span>${esc(text)}</span>
+      </button>`;
+    })
+    .join("");
+
+const viewPractice = () => {
+  const session = state.session;
+  if (!session) return viewPracticeSetup();
+
+  if (session.index >= session.questions.length) {
+    const total = session.questions.length;
+    const score = session.score;
+    const percent = pct(score, total);
+    const missed = session.questions.filter((q, i) => session.answers[i] !== q.answer);
+    const message = percent >= 80 ? "Strong round. Push into a timed exam next."
+      : percent >= 60 ? "Solid, but worth another pass over the ones you missed."
+      : "Work through the missed questions before moving on.";
+
+    return `
+      <h1>Practice complete</h1>
+      <div class="card" style="text-align:center;padding:32px 20px">
+        <div class="score-big" style="color:${percent >= 70 ? "var(--green)" : percent >= 50 ? "var(--amber)" : "var(--red)"}">${score}<span style="font-size:24px;color:var(--text-dim)">/${total}</span></div>
+        <div class="score-sub">${percent}% correct · ${durationText((Date.now() - session.startedAt) / 1000)}</div>
+        <p class="verdict">${message}</p>
+        <div class="btn-row" style="justify-content:center;margin-top:20px">
+          ${missed.length ? `<button class="btn btn-primary" data-act="retry-missed">Redo ${missed.length} missed</button>` : ""}
+          <button class="btn" data-act="go" data-view="practice-setup">New practice</button>
+          <button class="btn btn-ghost" data-act="go" data-view="home">Home</button>
+        </div>
+      </div>`;
+  }
+
+  const q = session.questions[session.index];
+  const picked = session.answers[session.index];
+  const locked = session.locked[session.index];
+  const isRight = locked && picked === q.answer;
+  const done = session.index + (locked ? 1 : 0);
+
+  return `
+    <div class="runner-top">
+      <span class="runner-meta">Question ${session.index + 1} of ${session.questions.length}</span>
+      <span class="runner-meta">Score ${session.score}/${done || 0}</span>
+    </div>
+    <div class="bar" style="margin-bottom:20px"><div class="bar-fill" style="width:${pct(session.index, session.questions.length)}%"></div></div>
+
+    <div class="card">
+      <div class="q-tag">${esc(q.title)}</div>
+      <div class="q-text">${esc(q.q)}</div>
+      <div class="opts">${optionsHtml(q, picked, locked)}</div>
+
+      ${locked ? `<div class="feedback ${isRight ? "correct" : "wrong"}">
+        <div class="feedback-head">${isRight ? "Correct" : `Not quite — the answer is ${LETTERS[q.answer]}`}</div>
+        <div>${esc(q.explanation)}</div>
+        ${q.ref ? `<div class="feedback-ref">${esc(q.title)} · ${esc(q.ref)}</div>` : ""}
+      </div>` : ""}
+
+      <div class="runner-actions">
+        <button class="btn btn-ghost" data-act="flag">${isFlagged(q.id) ? "&#9733; Flagged" : "&#9734; Flag"}</button>
+        <span class="spacer"></span>
+        ${session.index > 0 ? `<button class="btn btn-ghost" data-act="prev">Back</button>` : ""}
+        ${locked ? `<button class="btn btn-primary" data-act="next">${session.index + 1 >= session.questions.length ? "See results" : "Next question"}</button>` : `<button class="btn btn-ghost" data-act="next">Skip</button>`}
+      </div>
+    </div>
+
+    <div class="btn-row" style="margin-top:18px">
+      <button class="btn btn-ghost" data-act="quit-practice">End practice</button>
+    </div>`;
+};
+
+const viewExam = () => {
+  const session = state.session;
+  if (!session) return viewExamSetup();
+
+  const q = session.questions[session.index];
+  const picked = session.answers[session.index];
+  const answered = session.answers.filter((a) => a !== null).length;
+  const left = session.endsAt ? (session.endsAt - Date.now()) / 1000 : null;
+
+  const cells = session.questions
+    .map((item, i) => {
+      const cls = ["nav-cell"];
+      if (session.answers[i] !== null) cls.push("answered");
+      if (i === session.index) cls.push("current");
+      if (isFlagged(item.id)) cls.push("flagged");
+      return `<button class="${cls.join(" ")}" data-act="jump" data-index="${i}">${i + 1}</button>`;
+    })
+    .join("");
+
+  return `
+    <div class="runner-top">
+      <span class="runner-meta">Question ${session.index + 1} of ${session.questions.length}</span>
+      <span class="runner-meta">${answered} answered</span>
+      ${left !== null ? `<span class="timer ${left <= 60 ? "low" : ""}" id="timer">${clockText(left)}</span>` : ""}
+    </div>
+    <div class="bar" style="margin-bottom:20px"><div class="bar-fill" style="width:${pct(answered, session.questions.length)}%"></div></div>
+
+    <div class="card">
+      <div class="q-tag">${esc(q.unit)}</div>
+      <div class="q-text">${esc(q.q)}</div>
+      <div class="opts">${optionsHtml(q, picked, false)}</div>
+
+      <div class="runner-actions">
+        <button class="btn btn-ghost" data-act="flag">${isFlagged(q.id) ? "&#9733; Flagged" : "&#9734; Flag"}</button>
+        ${picked !== null ? `<button class="btn btn-ghost" data-act="clear-answer">Clear</button>` : ""}
+        <span class="spacer"></span>
+        <button class="btn btn-ghost" data-act="prev" ${session.index === 0 ? "disabled" : ""}>Back</button>
+        <button class="btn" data-act="next" ${session.index + 1 >= session.questions.length ? "disabled" : ""}>Next</button>
+      </div>
+    </div>
+
+    <div class="section" style="margin-top:20px">
+      <div class="eyebrow">Question navigator</div>
+      <div class="nav-grid">${cells}</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" data-act="submit-exam">Submit paper</button>
+      <button class="btn btn-ghost" data-act="quit-exam">Abandon</button>
+    </div>`;
+};
+
+const viewResults = () => {
+  const r = state.results;
+  if (!r) return viewHome();
+
+  const wrong = r.review.filter((item) => !item.correct);
+  const byUnit = new Map();
+  for (const item of r.review) {
+    const entry = byUnit.get(item.unit) || { total: 0, correct: 0 };
+    entry.total += 1;
+    if (item.correct) entry.correct += 1;
+    byUnit.set(item.unit, entry);
+  }
+
+  const breakdown = [...byUnit.entries()]
+    .map(([unit, e]) => {
+      const p = pct(e.correct, e.total);
+      return `<div class="breakdown-row">
+        <span class="breakdown-name">${esc(unit)}</span>
+        <span class="breakdown-bar bar"><span class="bar-fill" style="display:block;width:${p}%"></span></span>
+        <span class="breakdown-val">${e.correct}/${e.total}</span>
+      </div>`;
+    })
+    .join("");
+
+  const reviewHtml = wrong.length
+    ? wrong
+        .map((item) => `<div class="review-item">
+          <div class="q-tag">${esc(item.title)}</div>
+          <div class="review-q">${esc(item.q)}</div>
+          ${item.picked === null
+            ? `<div class="review-line skipped">Not answered</div>`
+            : `<div class="review-line yours">Your answer: ${LETTERS[item.picked]}. ${esc(item.options[item.picked])}</div>`}
+          <div class="review-line answer">Correct: ${LETTERS[item.answer]}. ${esc(item.options[item.answer])}</div>
+          ${item.explanation ? `<div class="review-exp">${esc(item.explanation)}</div>` : ""}
+          ${item.ref ? `<div class="feedback-ref">${esc(item.title)} · ${esc(item.ref)}</div>` : ""}
+        </div>`)
+        .join("")
+    : `<div class="card" style="text-align:center;color:var(--green)">Full marks — nothing to review.</div>`;
+
+  const verdict = r.pct >= 80 ? "Exam-ready on this selection."
+    : r.pct >= 65 ? "Comfortable pass, but the weak units below need another pass."
+    : r.pct >= 50 ? "Borderline. Practise the units scoring lowest before sitting another paper."
+    : "A lot to shore up — work through these in practice mode, then retry.";
+
+  return `
+    <h1>${r.autoSubmitted ? "Time up — paper submitted" : "Exam results"}</h1>
+    <p class="sub">${esc(r.label)} · ${dateText(r.at)}</p>
+
+    <div class="card" style="text-align:center;padding:32px 20px">
+      <div class="score-big" style="color:${r.pct >= 70 ? "var(--green)" : r.pct >= 50 ? "var(--amber)" : "var(--red)"}">${r.score}<span style="font-size:24px;color:var(--text-dim)">/${r.total}</span></div>
+      <div class="score-sub">${r.pct}% · ${durationText(r.seconds)}${r.skipped ? ` · ${r.skipped} left blank` : ""}</div>
+      <p class="verdict">${verdict}</p>
+    </div>
+
+    <div class="section" style="margin-top:24px">
+      <div class="eyebrow">By unit</div>
+      <div class="card">${breakdown}</div>
+    </div>
+
+    <div class="btn-row section">
+      ${wrong.length ? `<button class="btn btn-primary" data-act="practise-wrong">Practise the ${wrong.length} you missed</button>` : ""}
+      <button class="btn" data-act="go" data-view="exam-setup">New exam</button>
+      <button class="btn btn-ghost" data-act="go" data-view="home">Home</button>
+    </div>
+
+    <div class="section">
+      <div class="eyebrow">Review — ${wrong.length} incorrect or blank</div>
+      ${reviewHtml}
+    </div>`;
+};
+
+const viewProgress = () => {
+  const { lectures, questions } = state.data;
+  const overall = accuracyOf(questions.map((q) => q.id));
+
+  const rows = lectures
+    .filter((l) => l.ready)
+    .map((l) => {
+      const ids = questions.filter((q) => q.slug === l.slug).map((q) => q.id);
+      const acc = accuracyOf(ids);
+      const attempted = ids.filter((id) => progress.stats[id]).length;
+      const colour = !acc.seen ? "var(--text-dim)" : acc.pct >= 70 ? "var(--green)" : acc.pct >= 50 ? "var(--amber)" : "var(--red)";
+      return `<tr>
+        <td class="name">${esc(l.title)}</td>
+        <td>${esc(l.unit)}</td>
+        <td class="num">${attempted}/${ids.length}</td>
+        <td class="num" style="color:${colour}">${acc.seen ? `${acc.pct}%` : "-"}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const attempts = progress.attempts.length
+    ? progress.attempts
+        .slice()
+        .reverse()
+        .map((a) => `<tr>
+          <td class="name">${dateText(a.at)}</td>
+          <td>${esc(a.label)}</td>
+          <td class="num">${a.score}/${a.total}</td>
+          <td class="num" style="color:${a.pct >= 70 ? "var(--green)" : a.pct >= 50 ? "var(--amber)" : "var(--red)"}">${a.pct}%</td>
+        </tr>`)
+        .join("")
+    : `<tr><td colspan="4" style="color:var(--text-dim)">No exams sat yet.</td></tr>`;
+
+  return `
+    <h1>Progress</h1>
+    <p class="sub">Everything here is stored in this browser only.</p>
+
+    <div class="section tiles">
+      <div class="tile"><div class="tile-value">${overall.seen ? `${overall.pct}%` : "-"}</div><div class="tile-label">Overall accuracy</div></div>
+      <div class="tile"><div class="tile-value">${overall.seen}</div><div class="tile-label">Answers given</div></div>
+      <div class="tile"><div class="tile-value">${progress.flags.length}</div><div class="tile-label">Flagged questions</div></div>
+      <div class="tile"><div class="tile-value">${progress.attempts.length}</div><div class="tile-label">Exams sat</div></div>
+    </div>
+
+    <div class="section">
+      <div class="eyebrow">Past exams</div>
+      <div class="card" style="padding:6px 10px">
+        <table><thead><tr><th>When</th><th>Paper</th><th class="num">Score</th><th class="num">%</th></tr></thead>
+        <tbody>${attempts}</tbody></table>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="eyebrow">By lecture</div>
+      <div class="card" style="padding:6px 10px">
+        <table><thead><tr><th>Lecture</th><th>Unit</th><th class="num">Attempted</th><th class="num">Accuracy</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-danger" data-act="reset-progress">Reset all progress</button>
+    </div>`;
+};
+
+/* ============================================================
+   Render
+   ============================================================ */
+
+const render = () => {
+  const app = document.getElementById("app");
+
+  if (state.error) {
+    app.innerHTML = `<div class="empty"><div class="empty-title">Could not load the question bank</div><p>${esc(state.error)}</p></div>`;
+    return;
+  }
+  if (!state.data) {
+    app.innerHTML = `<div class="empty">Loading question bank…</div>`;
+    return;
+  }
+
+  renderNav();
+
+  const views = {
+    home: viewHome,
+    "practice-setup": viewPracticeSetup,
+    practice: viewPractice,
+    "exam-setup": viewExamSetup,
+    exam: viewExam,
+    results: viewResults,
+    progress: viewProgress,
+  };
+
+  app.innerHTML = (views[state.view] || viewHome)();
+  window.scrollTo({ top: 0, behavior: "auto" });
+};
+
+/* ============================================================
+   Actions
+   ============================================================ */
+
+const defaultSetup = () => ({
+  pool: "all",
+  slugs: state.data.lectures.filter((l) => l.ready).map((l) => l.slug),
+  count: 20,
+  timed: true,
+  minutes: 30,
+  unitFocus: null,
+});
+
+const goTo = (view) => {
+  stopTimer();
+  if (view === "practice-setup" || view === "exam-setup") {
+    if (!state.setup) state.setup = defaultSetup();
+    state.setup.count = view === "exam-setup" && state.setup.count === 20 ? 25 : state.setup.count;
+    state.session = null;
+  }
+  if (view === "home" || view === "progress") state.session = null;
+  state.view = view;
+  render();
+};
+
+const finishExam = (autoSubmitted) => {
+  const session = state.session;
+  if (!session) return;
+  stopTimer();
+
+  let score = 0;
+  let skipped = 0;
+  const review = session.questions.map((q, i) => {
+    const picked = session.answers[i];
+    const correct = picked === q.answer;
+    if (correct) score += 1;
+    if (picked === null) skipped += 1;
+    if (picked !== null) recordAnswer(q.id, correct);
+    return { ...q, picked, correct };
+  });
+
+  const seconds = (Date.now() - session.startedAt) / 1000;
+  const percent = pct(score, session.questions.length);
+
+  state.results = {
+    at: new Date().toISOString(),
+    label: session.label,
+    score,
+    total: session.questions.length,
+    pct: percent,
+    seconds,
+    skipped,
+    autoSubmitted: Boolean(autoSubmitted),
+    review,
+  };
+
+  progress.attempts.push({
+    at: state.results.at,
+    label: session.label,
+    score,
+    total: session.questions.length,
+    pct: percent,
+    seconds: Math.round(seconds),
+  });
+  saveProgress();
+
+  state.session = null;
+  state.view = "results";
+  closeModal();
+  render();
+};
+
+const handle = (act, el) => {
+  const session = state.session;
+  const setup = state.setup;
+
+  switch (act) {
+    case "go":
+      goTo(el.dataset.view);
+      return;
+
+    case "unit-practice":
+      setupForUnit(el.dataset.unit);
+      state.session = null;
+      state.view = "practice-setup";
+      render();
+      return;
+
+    case "unit-exam":
+      setupForUnit(el.dataset.unit);
+      state.setup.count = 25;
+      state.session = null;
+      state.view = "exam-setup";
+      render();
+      return;
+
+    /* ---- setup ---- */
+    case "pool":
+      setup.pool = el.dataset.pool;
+      render();
+      return;
+
+    case "pick-lecture": {
+      const slug = el.dataset.slug;
+      const at = setup.slugs.indexOf(slug);
+      if (at === -1) setup.slugs.push(slug);
+      else setup.slugs.splice(at, 1);
+      clearUnitFocusIfChanged(setup);
+      render();
+      return;
+    }
+
+    case "pick-unit": {
+      const unit = el.dataset.unit;
+      const slugs = state.data.lectures.filter((l) => l.ready && l.unit === unit).map((l) => l.slug);
+      const allOn = slugs.every((s) => setup.slugs.includes(s));
+      setup.slugs = allOn
+        ? setup.slugs.filter((s) => !slugs.includes(s))
+        : [...new Set([...setup.slugs, ...slugs])];
+      clearUnitFocusIfChanged(setup);
+      render();
+      return;
+    }
+
+    case "pick-all":
+      setup.slugs = state.data.lectures.filter((l) => l.ready).map((l) => l.slug);
+      setup.unitFocus = null;
+      render();
+      return;
+
+    case "pick-none":
+      setup.slugs = [];
+      setup.unitFocus = null;
+      render();
+      return;
+
+    case "count":
+      setup.count = Number(el.dataset.count);
+      render();
+      return;
+
+    case "timer-toggle": {
+      const input = document.getElementById("examMinutes");
+      if (input) setup.minutes = Math.max(1, Number(input.value) || setup.minutes);
+      setup.timed = !setup.timed;
+      render();
+      return;
+    }
+
+    case "start-practice": {
+      const pool = filterByLectures(questionsForScope(setup), setup.slugs);
+      if (!pool.length) return;
+      const picked = shuffle(pool).slice(0, setup.count === 0 ? pool.length : setup.count);
+      startSession("practice", picked, { label: scopeLabel(setup) });
+      return;
+    }
+
+    case "start-exam": {
+      const input = document.getElementById("examMinutes");
+      if (input) setup.minutes = Math.max(1, Math.min(300, Number(input.value) || setup.minutes));
+      const pool = filterByLectures(questionsForScope(setup), setup.slugs);
+      if (!pool.length) return;
+      const picked = shuffle(pool).slice(0, setup.count === 0 ? pool.length : setup.count);
+      startSession("exam", picked, {
+        label: `${picked.length}Q · ${scopeLabel(setup)}${setup.timed ? ` · ${setup.minutes}min` : ""}`,
+        durationMs: setup.timed ? setup.minutes * 60000 : null,
+      });
+      return;
+    }
+
+    /* ---- shared runner ---- */
+    case "pick": {
+      if (!session) return;
+      const index = Number(el.dataset.index);
+      if (session.mode === "practice") {
+        if (session.locked[session.index]) return;
+        const q = session.questions[session.index];
+        session.answers[session.index] = index;
+        session.locked[session.index] = true;
+        const correct = index === q.answer;
+        if (correct) session.score += 1;
+        recordAnswer(q.id, correct);
+      } else {
+        session.answers[session.index] = index;
+      }
+      render();
+      return;
+    }
+
+    case "clear-answer":
+      if (!session) return;
+      session.answers[session.index] = null;
+      render();
+      return;
+
+    case "flag":
+      if (!session) return;
+      toggleFlag(session.questions[session.index].id);
+      render();
+      return;
+
+    case "next":
+      if (!session) return;
+      session.index = Math.min(session.index + 1, session.questions.length);
+      render();
+      return;
+
+    case "prev":
+      if (!session) return;
+      session.index = Math.max(0, session.index - 1);
+      render();
+      return;
+
+    case "jump":
+      if (!session) return;
+      session.index = Number(el.dataset.index);
+      render();
+      return;
+
+    /* ---- practice endings ---- */
+    case "retry-missed": {
+      if (!session) return;
+      const missedIds = session.questions.filter((q, i) => session.answers[i] !== q.answer).map((q) => q.id);
+      const pool = state.data.questions.filter((q) => missedIds.includes(q.id));
+      startSession("practice", shuffle(pool), { label: "Missed questions" });
+      return;
+    }
+
+    case "quit-practice":
+      if (!session) return;
+      showModal("End this practice run?", "Your answers so far are already saved to your progress.", "End practice", () => {
+        state.session = null;
+        closeModal();
+        goTo("home");
+      });
+      return;
+
+    /* ---- exam endings ---- */
+    case "submit-exam": {
+      if (!session) return;
+      const blank = session.answers.filter((a) => a === null).length;
+      showModal(
+        "Submit your paper?",
+        blank
+          ? `${blank} question${blank === 1 ? " is" : "s are"} still blank. Blank answers are marked wrong.`
+          : "All questions are answered. You will see your score and a review of anything you got wrong.",
+        "Submit",
+        () => finishExam(false)
+      );
+      return;
+    }
+
+    case "quit-exam":
+      if (!session) return;
+      showModal("Abandon this exam?", "The paper will be discarded and nothing recorded.", "Abandon", () => {
+        stopTimer();
+        state.session = null;
+        closeModal();
+        goTo("home");
+      }, true);
+      return;
+
+    case "practise-wrong": {
+      const ids = state.results.review.filter((item) => !item.correct).map((item) => item.id);
+      const pool = state.data.questions.filter((q) => ids.includes(q.id));
+      startSession("practice", shuffle(pool), { label: "Exam corrections" });
+      return;
+    }
+
+    /* ---- progress ---- */
+    case "reset-progress":
+      showModal("Reset all progress?", "Accuracy history, flagged questions and past exam results will be permanently deleted from this browser.", "Reset everything", () => {
+        progress = { v: 1, stats: {}, flags: [], attempts: [] };
+        saveProgress();
+        closeModal();
+        render();
+      }, true);
+      return;
+
+    case "modal-confirm":
+      if (modalAction) modalAction();
+      return;
+
+    case "modal-cancel":
+      closeModal();
+      return;
+
+    default:
+  }
+};
+
+document.addEventListener("click", (event) => {
+  const el = event.target.closest("[data-act]");
+  if (!el) return;
+  handle(el.dataset.act, el);
+});
+
+document.addEventListener("keydown", (event) => {
+  const session = state.session;
+  if (!session || (state.view !== "practice" && state.view !== "exam")) return;
+  if (event.target.tagName === "INPUT") return;
+
+  const key = event.key.toUpperCase();
+  const letterIndex = LETTERS.indexOf(key);
+  const current = session.questions[session.index];
+
+  if (current && letterIndex > -1 && letterIndex < current.options.length) {
+    event.preventDefault();
+    handle("pick", { dataset: { index: String(letterIndex) } });
+    return;
+  }
+  if (event.key === "ArrowRight") handle("next", null);
+  if (event.key === "ArrowLeft") handle("prev", null);
+});
+
+/* ============================================================
+   Boot
+   ============================================================ */
+
+const boot = async () => {
+  loadProgress();
+  render();
+  const bankUrl =
+    location.hostname === "localhost" || location.hostname === "127.0.0.1"
+      ? "/api/bank"
+      : "data/bank.json";
+  try {
+    const res = await fetch(bankUrl);
+    if (!res.ok) throw new Error(`server responded ${res.status}`);
+    state.data = await res.json();
+    state.setup = defaultSetup();
+  } catch (err) {
+    state.error = err.message;
+  }
+  render();
+};
+
+boot();
+</script>
+</body>
+</html>
