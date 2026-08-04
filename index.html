@@ -420,8 +420,15 @@
    ============================================================ */
 
 const STORE_KEY = "py411-reviser-v1";
+const SYNC_KEY = "py411-sync-hash";
+const CLOUD_SAVE_MS = 1500;
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
 const SAQ_PASS_RATIO = 0.6;
+
+const API_BASE =
+  location.hostname === "localhost" || location.hostname === "127.0.0.1"
+    ? ""
+    : "https://py411-reviser-api-227436363119.us-central1.run.app";
 
 const state = {
   data: null,          // { units, lectures, questions }
@@ -432,33 +439,209 @@ const state = {
   error: null,
 };
 
-let progress = { v: 1, stats: {}, flags: [], attempts: [] };
+let progress = { v: 1, stats: {}, flags: [], attempts: [], updatedAt: "" };
 let timerId = null;
+let cloudSaveTimer = null;
+let syncDismissed = false;
+
+const defaultProgress = () => ({ v: 1, stats: {}, flags: [], attempts: [], updatedAt: "" });
+
+const normalizeProgress = (raw) => {
+  if (!raw || typeof raw !== "object") return defaultProgress();
+  const stats = {};
+  if (raw.stats && typeof raw.stats === "object") {
+    for (const [id, entry] of Object.entries(raw.stats)) {
+      if (!entry || typeof entry !== "object") continue;
+      const seen = Math.max(0, Number(entry.seen) || 0);
+      const correct = Math.min(Math.max(0, Number(entry.correct) || 0), seen);
+      if (seen > 0) stats[id] = { seen, correct };
+    }
+  }
+  const flags = Array.isArray(raw.flags) ? raw.flags.filter((f) => typeof f === "string" && f.trim()) : [];
+  const attempts = Array.isArray(raw.attempts) ? raw.attempts.filter((a) => a && typeof a === "object") : [];
+  return {
+    v: 1,
+    stats,
+    flags,
+    attempts,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : "",
+  };
+};
+
+const attemptKey = (att) =>
+  `${String(att.at || "")}|${String(att.label || "")}|${Number(att.score)}|${Number(att.total)}`;
+
+const mergeProgress = (a, b) => {
+  const left = normalizeProgress(a);
+  const right = normalizeProgress(b);
+  const stats = {};
+  const ids = new Set([...Object.keys(left.stats), ...Object.keys(right.stats)]);
+  for (const id of ids) {
+    const l = left.stats[id] || { seen: 0, correct: 0 };
+    const r = right.stats[id] || { seen: 0, correct: 0 };
+    const seen = Math.max(Number(l.seen) || 0, Number(r.seen) || 0);
+    const correct = Math.min(Math.max(Number(l.correct) || 0, Number(r.correct) || 0), seen);
+    if (seen > 0) stats[id] = { seen, correct };
+  }
+  const flags = [...new Set([...left.flags, ...right.flags])];
+  const attemptMap = new Map();
+  for (const att of [...left.attempts, ...right.attempts]) {
+    if (!att || typeof att !== "object") continue;
+    attemptMap.set(attemptKey(att), att);
+  }
+  const attempts = [...attemptMap.values()]
+    .sort((x, y) => String(y.at || "").localeCompare(String(x.at || "")))
+    .slice(0, 100);
+  const updatedAt =
+    String(left.updatedAt || "") > String(right.updatedAt || "") ? left.updatedAt : right.updatedAt;
+  return normalizeProgress({ stats, flags, attempts, updatedAt });
+};
+
+const getSyncHash = () => {
+  try {
+    const h = localStorage.getItem(SYNC_KEY);
+    return h && typeof h === "string" ? h.trim().toLowerCase() : "";
+  } catch {
+    return "";
+  }
+};
+
+const isSynced = () => Boolean(getSyncHash());
+
+const hashSyncCode = async (code) => {
+  const data = new TextEncoder().encode(String(code));
+  const buf = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+};
 
 const loadProgress = () => {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") {
-      progress = {
-        v: 1,
-        stats: parsed.stats && typeof parsed.stats === "object" ? parsed.stats : {},
-        flags: Array.isArray(parsed.flags) ? parsed.flags : [],
-        attempts: Array.isArray(parsed.attempts) ? parsed.attempts : [],
-      };
-    }
+    progress = raw ? normalizeProgress(JSON.parse(raw)) : defaultProgress();
   } catch (err) {
     console.warn("Could not read saved progress:", err.message);
+    progress = defaultProgress();
   }
 };
 
-const saveProgress = () => {
+const saveProgressLocal = () => {
   try {
+    progress.updatedAt = new Date().toISOString();
     localStorage.setItem(STORE_KEY, JSON.stringify(progress));
   } catch (err) {
     console.warn("Could not save progress:", err.message);
   }
+};
+
+const saveProgressToCloud = async () => {
+  const hash = getSyncHash();
+  if (!hash) return true;
+  try {
+    const res = await fetch(`${API_BASE}/api/progress`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${hash}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(progress),
+    });
+    if (!res.ok) return false;
+    progress = normalizeProgress(await res.json());
+    saveProgressLocal();
+    return true;
+  } catch (err) {
+    console.warn("Cloud save failed:", err.message);
+    return false;
+  }
+};
+
+const queueCloudSave = () => {
+  if (!getSyncHash()) return;
+  if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(() => {
+    cloudSaveTimer = null;
+    saveProgressToCloud();
+  }, CLOUD_SAVE_MS);
+};
+
+const saveProgress = () => {
+  saveProgressLocal();
+  queueCloudSave();
+};
+
+const fetchCloudProgress = async () => {
+  const hash = getSyncHash();
+  if (!hash) return null;
+  const res = await fetch(`${API_BASE}/api/progress`, {
+    headers: { Authorization: `Bearer ${hash}` },
+  });
+  if (res.status === 401) throw new Error("Invalid sync code");
+  if (!res.ok) throw new Error(`server responded ${res.status}`);
+  return normalizeProgress(await res.json());
+};
+
+const reconcileProgress = async () => {
+  const hash = getSyncHash();
+  if (!hash) return;
+  const local = normalizeProgress(progress);
+  try {
+    const remote = await fetchCloudProgress();
+    const merged = mergeProgress(local, remote);
+    merged.updatedAt = new Date().toISOString();
+    progress = merged;
+    saveProgressLocal();
+    const remoteJson = JSON.stringify(remote);
+    const mergedJson = JSON.stringify(merged);
+    if (mergedJson !== remoteJson) await saveProgressToCloud();
+  } catch (err) {
+    if (err.message === "Invalid sync code") {
+      localStorage.removeItem(SYNC_KEY);
+      showSyncModal();
+    } else {
+      console.warn("Could not reconcile progress:", err.message);
+    }
+  }
+};
+
+const setSyncCode = async (code) => {
+  const trimmed = String(code || "").trim();
+  if (!trimmed) return;
+  const hash = await hashSyncCode(trimmed);
+  localStorage.setItem(SYNC_KEY, hash);
+  await reconcileProgress();
+  closeModal();
+  render();
+};
+
+const clearSyncCode = () => {
+  localStorage.removeItem(SYNC_KEY);
+  if (cloudSaveTimer) {
+    clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = null;
+  }
+};
+
+const showSyncModal = () => {
+  document.getElementById("modalHost").innerHTML = `
+    <div class="modal-backdrop">
+      <div class="modal">
+        <h3>Sync progress across devices</h3>
+        <p>Enter your sync code to keep accuracy, flags and exam history on every device you use.</p>
+        <div class="field" style="margin-top:14px">
+          <input type="password" id="syncCodeInput" placeholder="Sync code" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14.5px">
+        </div>
+        <div class="btn-row" style="margin-top:16px">
+          <button class="btn btn-ghost" data-act="sync-dismiss">This device only</button>
+          <button class="btn btn-primary" data-act="sync-save">Save sync code</button>
+        </div>
+      </div>
+    </div>`;
+  const input = document.getElementById("syncCodeInput");
+  if (input) setTimeout(() => input.focus(), 0);
+};
+
+const maybeShowSyncModal = () => {
+  if (!getSyncHash() && !syncDismissed && state.view === "home") showSyncModal();
 };
 
 const recordAnswer = (id, correct) => {
@@ -1305,7 +1488,19 @@ const viewProgress = () => {
 
   return `
     <h1>Progress</h1>
-    <p class="sub">Everything here is stored in this browser only.</p>
+    <p class="sub">${isSynced() ? "Progress syncs across your devices via your sync code." : "Progress is stored on this device only until you add a sync code."}</p>
+
+    <div class="section">
+      <div class="eyebrow">Device sync</div>
+      <div class="card">
+        <div style="margin-bottom:12px"><span class="q-type ${isSynced() ? "mcq" : "saq"}">${isSynced() ? "Synced" : "This device only"}</span></div>
+        <p style="font-size:14px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">${isSynced() ? "Your progress is backed up to the cloud and shared with any device using the same sync code." : "Enter a sync code to continue where you left off on another phone or laptop."}</p>
+        <div class="btn-row">
+          <button class="btn" data-act="change-sync-code">${isSynced() ? "Change sync code" : "Set sync code"}</button>
+          ${isSynced() ? `<button class="btn btn-ghost" data-act="sync-clear-code">Stop syncing</button>` : ""}
+        </div>
+      </div>
+    </div>
 
     <div class="section tiles">
       <div class="tile"><div class="tile-value">${overall.seen ? `${overall.pct}%` : "-"}</div><div class="tile-label">Overall accuracy</div></div>
@@ -1669,12 +1864,55 @@ const handle = (act, el) => {
 
     /* ---- progress ---- */
     case "reset-progress":
-      showModal("Reset all progress?", "Accuracy history, flagged questions and past exam results will be permanently deleted from this browser.", "Reset everything", () => {
-        progress = { v: 1, stats: {}, flags: [], attempts: [] };
-        saveProgress();
-        closeModal();
-        render();
-      }, true);
+      showModal(
+        "Reset all progress?",
+        isSynced()
+          ? "Accuracy history, flagged questions and past exam results will be permanently deleted from all synced devices."
+          : "Accuracy history, flagged questions and past exam results will be permanently deleted from this browser.",
+        "Reset everything",
+        () => {
+          progress = defaultProgress();
+          saveProgressLocal();
+          const done = () => {
+            closeModal();
+            render();
+          };
+          if (isSynced()) saveProgressToCloud().finally(done);
+          else done();
+        },
+        true
+      );
+      return;
+
+    case "sync-save": {
+      const input = document.getElementById("syncCodeInput");
+      const code = input ? input.value : "";
+      if (!String(code).trim()) return;
+      setSyncCode(code);
+      return;
+    }
+
+    case "sync-dismiss":
+      syncDismissed = true;
+      closeModal();
+      return;
+
+    case "change-sync-code":
+      showSyncModal();
+      return;
+
+    case "sync-clear-code":
+      showModal(
+        "Stop syncing this device?",
+        "Progress will stay on this device but will no longer update the cloud copy or other devices.",
+        "Stop syncing",
+        () => {
+          clearSyncCode();
+          closeModal();
+          render();
+        },
+        true
+      );
       return;
 
     case "modal-confirm":
@@ -1740,6 +1978,8 @@ const boot = async () => {
     if (!res.ok) throw new Error(`server responded ${res.status}`);
     state.data = await res.json();
     state.setup = defaultSetup();
+    await reconcileProgress();
+    maybeShowSyncModal();
   } catch (err) {
     state.error = err.message;
   }
