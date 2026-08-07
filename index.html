@@ -313,6 +313,16 @@
   .model-answer { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); font-size: 14px; line-height: 1.55; }
   .model-answer-label { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
 
+  .login-user { font-size: 13px; color: var(--green); font-weight: 600; margin-left: auto; padding: 7px 14px; background: rgba(63,185,80,0.1); border-radius: 99px; border: 1px solid rgba(63,185,80,0.25); cursor: pointer; }
+
+  .login-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 18px; }
+  .login-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+  .login-card:hover { border-color: var(--border2); background: var(--surface2); }
+  .login-card.on { border-color: rgba(88,166,255,0.5); background: rgba(88,166,255,0.06); }
+  .login-name { font-weight: 700; font-size: 16px; margin-bottom: 6px; }
+  .login-hint { font-size: 13px; color: var(--text-muted); line-height: 1.45; }
+  .user-pill { font-size: 12.5px; color: var(--text-muted); padding: 6px 12px; border: 1px solid var(--border); border-radius: 99px; white-space: nowrap; }
+
   .runner-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
   .runner-actions .spacer { flex: 1; }
 
@@ -419,11 +429,16 @@
    State
    ============================================================ */
 
-const STORE_KEY = "py411-reviser-v1";
-const SYNC_KEY = "py411-sync-hash";
+const STORE_PREFIX = "py411-reviser-v1";
+const AUTH_KEY = "py411-auth";
 const CLOUD_SAVE_MS = 1500;
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
 const SAQ_PASS_RATIO = 0.6;
+
+const PROFILES = {
+  sharon: { label: "Sharon", hint: "Your progress syncs across all your devices." },
+  feranmi: { label: "Feranmi", hint: "Your own progress — separate from Sharon's." },
+};
 
 const API_BASE =
   location.hostname === "localhost" || location.hostname === "127.0.0.1"
@@ -431,18 +446,19 @@ const API_BASE =
     : "https://py411-reviser-api-227436363119.us-central1.run.app";
 
 const state = {
-  data: null,          // { units, lectures, questions }
-  view: "home",
-  session: null,       // active practice/exam session
-  results: null,       // last finished session
-  setup: null,         // setup form state
+  data: null,
+  view: "login",
+  session: null,
+  results: null,
+  setup: null,
   error: null,
+  auth: null,
+  loginProfile: "sharon",
 };
 
 let progress = { v: 1, stats: {}, flags: [], attempts: [], updatedAt: "" };
 let timerId = null;
 let cloudSaveTimer = null;
-let syncDismissed = false;
 
 const defaultProgress = () => ({ v: 1, stats: {}, flags: [], attempts: [], updatedAt: "" });
 
@@ -497,26 +513,49 @@ const mergeProgress = (a, b) => {
   return normalizeProgress({ stats, flags, attempts, updatedAt });
 };
 
-const getSyncHash = () => {
-  try {
-    const h = localStorage.getItem(SYNC_KEY);
-    return h && typeof h === "string" ? h.trim().toLowerCase() : "";
-  } catch {
-    return "";
-  }
+const getAuthToken = () => (state.auth && state.auth.token ? state.auth.token : "");
+
+const isLoggedIn = () => Boolean(getAuthToken());
+
+const profileLabel = () => {
+  if (!state.auth || !state.auth.profile) return "";
+  return PROFILES[state.auth.profile]?.label || state.auth.profile;
 };
 
-const isSynced = () => Boolean(getSyncHash());
+const progressStoreKey = () => {
+  const profile = state.auth?.profile || "guest";
+  return `${STORE_PREFIX}-${profile}`;
+};
 
-const hashSyncCode = async (code) => {
-  const data = new TextEncoder().encode(String(code));
+const hashCredentials = async (profile, password) => {
+  const data = new TextEncoder().encode(`${profile}:${password}`);
   const buf = await crypto.subtle.digest("SHA-256", data);
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 };
 
+const loadAuth = () => {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.profile && parsed.token) state.auth = parsed;
+  } catch (err) {
+    console.warn("Could not read auth:", err.message);
+  }
+};
+
+const saveAuth = () => {
+  try {
+    if (state.auth) localStorage.setItem(AUTH_KEY, JSON.stringify(state.auth));
+    else localStorage.removeItem(AUTH_KEY);
+  } catch (err) {
+    console.warn("Could not save auth:", err.message);
+  }
+};
+
 const loadProgress = () => {
   try {
-    const raw = localStorage.getItem(STORE_KEY);
+    const raw = localStorage.getItem(progressStoreKey());
     progress = raw ? normalizeProgress(JSON.parse(raw)) : defaultProgress();
   } catch (err) {
     console.warn("Could not read saved progress:", err.message);
@@ -527,36 +566,39 @@ const loadProgress = () => {
 const saveProgressLocal = () => {
   try {
     progress.updatedAt = new Date().toISOString();
-    localStorage.setItem(STORE_KEY, JSON.stringify(progress));
+    localStorage.setItem(progressStoreKey(), JSON.stringify(progress));
   } catch (err) {
     console.warn("Could not save progress:", err.message);
   }
 };
 
-const saveProgressToCloud = async () => {
-  const hash = getSyncHash();
-  if (!hash) return true;
+const saveProgressToCloud = async (replace = false) => {
+  const token = getAuthToken();
+  if (!token) return true;
   try {
-    const res = await fetch(`${API_BASE}/api/progress`, {
+    const res = await fetch(`${API_BASE}/api/progress${replace ? "?replace=1" : ""}`, {
       method: "PUT",
       headers: {
-        Authorization: `Bearer ${hash}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(progress),
     });
+    if (res.status === 401) throw new Error("Invalid password");
     if (!res.ok) return false;
-    progress = normalizeProgress(await res.json());
+    const remote = await res.json();
+    progress = normalizeProgress(remote);
     saveProgressLocal();
     return true;
   } catch (err) {
     console.warn("Cloud save failed:", err.message);
+    if (err.message === "Invalid password") logout(false);
     return false;
   }
 };
 
 const queueCloudSave = () => {
-  if (!getSyncHash()) return;
+  if (!getAuthToken()) return;
   if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
   cloudSaveTimer = setTimeout(() => {
     cloudSaveTimer = null;
@@ -570,19 +612,18 @@ const saveProgress = () => {
 };
 
 const fetchCloudProgress = async () => {
-  const hash = getSyncHash();
-  if (!hash) return null;
+  const token = getAuthToken();
+  if (!token) return null;
   const res = await fetch(`${API_BASE}/api/progress`, {
-    headers: { Authorization: `Bearer ${hash}` },
+    headers: { Authorization: `Bearer ${token}` },
   });
-  if (res.status === 401) throw new Error("Invalid sync code");
+  if (res.status === 401) throw new Error("Invalid password");
   if (!res.ok) throw new Error(`server responded ${res.status}`);
   return normalizeProgress(await res.json());
 };
 
 const reconcileProgress = async () => {
-  const hash = getSyncHash();
-  if (!hash) return;
+  if (!getAuthToken()) return;
   const local = normalizeProgress(progress);
   try {
     const remote = await fetchCloudProgress();
@@ -590,58 +631,43 @@ const reconcileProgress = async () => {
     merged.updatedAt = new Date().toISOString();
     progress = merged;
     saveProgressLocal();
-    const remoteJson = JSON.stringify(remote);
-    const mergedJson = JSON.stringify(merged);
-    if (mergedJson !== remoteJson) await saveProgressToCloud();
+    if (JSON.stringify(merged) !== JSON.stringify(remote)) await saveProgressToCloud();
   } catch (err) {
-    if (err.message === "Invalid sync code") {
-      localStorage.removeItem(SYNC_KEY);
-      showSyncModal();
-    } else {
-      console.warn("Could not reconcile progress:", err.message);
-    }
+    if (err.message === "Invalid password") logout(false);
+    else console.warn("Could not reconcile progress:", err.message);
   }
 };
 
-const setSyncCode = async (code) => {
-  const trimmed = String(code || "").trim();
-  if (!trimmed) return;
-  const hash = await hashSyncCode(trimmed);
-  localStorage.setItem(SYNC_KEY, hash);
+const login = async (profile, password) => {
+  const token = await hashCredentials(profile, password);
+  const res = await fetch(`${API_BASE}/api/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) throw new Error("Wrong password");
+  if (!res.ok) throw new Error("Could not sign in — try again in a moment");
+  state.auth = { profile, token };
+  saveAuth();
+  loadProgress();
   await reconcileProgress();
-  closeModal();
+  state.view = "home";
+  state.loginError = null;
   render();
 };
 
-const clearSyncCode = () => {
-  localStorage.removeItem(SYNC_KEY);
+const logout = (goLogin = true) => {
   if (cloudSaveTimer) {
     clearTimeout(cloudSaveTimer);
     cloudSaveTimer = null;
   }
-};
-
-const showSyncModal = () => {
-  document.getElementById("modalHost").innerHTML = `
-    <div class="modal-backdrop">
-      <div class="modal">
-        <h3>Sync progress across devices</h3>
-        <p>Enter your sync code to keep accuracy, flags and exam history on every device you use.</p>
-        <div class="field" style="margin-top:14px">
-          <input type="password" id="syncCodeInput" placeholder="Sync code" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14.5px">
-        </div>
-        <div class="btn-row" style="margin-top:16px">
-          <button class="btn btn-ghost" data-act="sync-dismiss">This device only</button>
-          <button class="btn btn-primary" data-act="sync-save">Save sync code</button>
-        </div>
-      </div>
-    </div>`;
-  const input = document.getElementById("syncCodeInput");
-  if (input) setTimeout(() => input.focus(), 0);
-};
-
-const maybeShowSyncModal = () => {
-  if (!getSyncHash() && !syncDismissed && state.view === "home") showSyncModal();
+  state.auth = null;
+  saveAuth();
+  progress = defaultProgress();
+  state.session = null;
+  state.results = null;
+  if (goLogin) {
+    state.view = "login";
+    render();
+  }
 };
 
 const recordAnswer = (id, correct) => {
@@ -948,6 +974,10 @@ const closeModal = () => {
    ============================================================ */
 
 const renderNav = () => {
+  if (!isLoggedIn()) {
+    document.getElementById("nav").innerHTML = "";
+    return;
+  }
   const items = [
     { view: "home", label: "Home" },
     { view: "practice-setup", label: "Practice" },
@@ -958,9 +988,39 @@ const renderNav = () => {
     : state.view.startsWith("exam") || state.view === "results" ? "exam-setup"
     : state.view;
 
-  document.getElementById("nav").innerHTML = items
-    .map((item) => `<button class="nav-btn ${item.view === active ? "active" : ""}" data-act="go" data-view="${item.view}">${item.label}</button>`)
+  document.getElementById("nav").innerHTML =
+    items
+      .map((item) => `<button class="nav-btn ${item.view === active ? "active" : ""}" data-act="go" data-view="${item.view}">${item.label}</button>`)
+      .join("") +
+    `<button class="login-user" data-act="switch-user" title="Switch user">${esc(profileLabel())}</button>`;
+};
+
+const viewLogin = () => {
+  const profile = state.loginProfile || "sharon";
+  const meta = PROFILES[profile] || PROFILES.sharon;
+  const tabs = Object.entries(PROFILES)
+    .map(([id, p]) => `<button class="chip ${id === profile ? "on" : ""}" data-act="login-pick" data-profile="${id}">${esc(p.label)}</button>`)
     .join("");
+
+  return `
+    <h1>PY411 Reviser</h1>
+    <p class="sub">Sign in to save your progress across devices. Sharon and Feranmi each have their own separate record.</p>
+
+    <div class="card" style="max-width:440px;margin:0 auto">
+      <div class="field">
+        <span class="field-label">Who's revising?</span>
+        <div class="chips">${tabs}</div>
+      </div>
+      <p style="font-size:14px;color:var(--text-muted);margin-bottom:16px;line-height:1.5">${esc(meta.hint)}</p>
+      <div class="field">
+        <span class="field-label">Password</span>
+        <input type="password" id="loginPassword" placeholder="Enter your password" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14.5px">
+      </div>
+      ${state.loginError ? `<p style="color:var(--red);font-size:14px;margin-top:10px">${esc(state.loginError)}</p>` : ""}
+      <div class="btn-row" style="margin-top:16px">
+        <button class="btn btn-primary" data-act="login-submit">Sign in</button>
+      </div>
+    </div>`;
 };
 
 const viewHome = () => {
@@ -1488,16 +1548,15 @@ const viewProgress = () => {
 
   return `
     <h1>Progress</h1>
-    <p class="sub">${isSynced() ? "Progress syncs across your devices via your sync code." : "Progress is stored on this device only until you add a sync code."}</p>
+    <p class="sub">Signed in as <strong>${esc(profileLabel())}</strong> — progress syncs across your devices automatically.</p>
 
     <div class="section">
-      <div class="eyebrow">Device sync</div>
+      <div class="eyebrow">Account</div>
       <div class="card">
-        <div style="margin-bottom:12px"><span class="q-type ${isSynced() ? "mcq" : "saq"}">${isSynced() ? "Synced" : "This device only"}</span></div>
-        <p style="font-size:14px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">${isSynced() ? "Your progress is backed up to the cloud and shared with any device using the same sync code." : "Enter a sync code to continue where you left off on another phone or laptop."}</p>
+        <div style="margin-bottom:12px"><span class="q-type mcq">${esc(profileLabel())}</span></div>
+        <p style="font-size:14px;color:var(--text-muted);margin-bottom:14px;line-height:1.5">Use the same name and password on every device to pick up where you left off.</p>
         <div class="btn-row">
-          <button class="btn" data-act="change-sync-code">${isSynced() ? "Change sync code" : "Set sync code"}</button>
-          ${isSynced() ? `<button class="btn btn-ghost" data-act="sync-clear-code">Stop syncing</button>` : ""}
+          <button class="btn btn-ghost" data-act="switch-user">Switch user</button>
         </div>
       </div>
     </div>
@@ -1548,6 +1607,14 @@ const render = () => {
 
   renderNav();
 
+  if (!isLoggedIn()) {
+    app.innerHTML = viewLogin();
+    const input = document.getElementById("loginPassword");
+    if (input) setTimeout(() => input.focus(), 0);
+    window.scrollTo({ top: 0, behavior: "auto" });
+    return;
+  }
+
   const views = {
     home: viewHome,
     "practice-setup": viewPracticeSetup,
@@ -1577,6 +1644,11 @@ const defaultSetup = () => ({
 });
 
 const goTo = (view) => {
+  if (!isLoggedIn() && view !== "login") {
+    state.view = "login";
+    render();
+    return;
+  }
   stopTimer();
   if (view === "practice-setup" || view === "exam-setup") {
     if (!state.setup) state.setup = defaultSetup();
@@ -1866,9 +1938,7 @@ const handle = (act, el) => {
     case "reset-progress":
       showModal(
         "Reset all progress?",
-        isSynced()
-          ? "Accuracy history, flagged questions and past exam results will be permanently deleted from all synced devices."
-          : "Accuracy history, flagged questions and past exam results will be permanently deleted from this browser.",
+        "Accuracy history, flagged questions and past exam results will be permanently deleted from all your devices.",
         "Reset everything",
         () => {
           progress = defaultProgress();
@@ -1877,42 +1947,37 @@ const handle = (act, el) => {
             closeModal();
             render();
           };
-          if (isSynced()) saveProgressToCloud().finally(done);
+          if (isLoggedIn()) saveProgressToCloud(true).finally(done);
           else done();
         },
         true
       );
       return;
 
-    case "sync-save": {
-      const input = document.getElementById("syncCodeInput");
-      const code = input ? input.value : "";
-      if (!String(code).trim()) return;
-      setSyncCode(code);
+    case "login-pick":
+      state.loginProfile = el.dataset.profile;
+      state.loginError = null;
+      render();
+      return;
+
+    case "login-submit": {
+      const input = document.getElementById("loginPassword");
+      const password = input ? input.value : "";
+      if (!String(password).trim()) {
+        state.loginError = "Enter your password";
+        render();
+        return;
+      }
+      state.loginError = null;
+      login(state.loginProfile || "sharon", password).catch((err) => {
+        state.loginError = err.message === "Wrong password" ? "Wrong password — try again" : err.message;
+        render();
+      });
       return;
     }
 
-    case "sync-dismiss":
-      syncDismissed = true;
-      closeModal();
-      return;
-
-    case "change-sync-code":
-      showSyncModal();
-      return;
-
-    case "sync-clear-code":
-      showModal(
-        "Stop syncing this device?",
-        "Progress will stay on this device but will no longer update the cloud copy or other devices.",
-        "Stop syncing",
-        () => {
-          clearSyncCode();
-          closeModal();
-          render();
-        },
-        true
-      );
+    case "switch-user":
+      logout(true);
       return;
 
     case "modal-confirm":
@@ -1945,6 +2010,15 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if (state.view === "login" && event.key === "Enter") {
+    const input = document.getElementById("loginPassword");
+    if (input && document.activeElement === input) {
+      event.preventDefault();
+      handle("login-submit", null);
+      return;
+    }
+  }
+
   const session = state.session;
   if (!session || (state.view !== "practice" && state.view !== "exam")) return;
   if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA") return;
@@ -1967,8 +2041,15 @@ document.addEventListener("keydown", (event) => {
    ============================================================ */
 
 const boot = async () => {
-  loadProgress();
+  loadAuth();
+  if (state.auth) {
+    loadProgress();
+    state.view = "home";
+  } else {
+    state.view = "login";
+  }
   render();
+
   const bankUrl =
     location.hostname === "localhost" || location.hostname === "127.0.0.1"
       ? "/api/bank"
@@ -1978,8 +2059,7 @@ const boot = async () => {
     if (!res.ok) throw new Error(`server responded ${res.status}`);
     state.data = await res.json();
     state.setup = defaultSetup();
-    await reconcileProgress();
-    maybeShowSyncModal();
+    if (isLoggedIn()) await reconcileProgress();
   } catch (err) {
     state.error = err.message;
   }
